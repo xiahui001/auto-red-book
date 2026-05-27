@@ -4,6 +4,7 @@ node_modules/
 .tools/
 .env
 .env*.local
+.env.vercel.production
 tsconfig.tsbuildinfo
 .auth/
 data/
