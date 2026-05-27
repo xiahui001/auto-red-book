@@ -286,6 +286,7 @@ a:focus-visible {
 .account-console-top button,
 .account-action-row button,
 .account-note-row button,
+.connector-action,
 .input-row button,
 .wide-button,
 .scrape-toolbar button,
@@ -816,6 +817,16 @@ textarea {
   background: var(--coral);
 }
 
+.workflow-step.actionable {
+  width: 100%;
+  color: var(--ink);
+  text-align: left;
+}
+
+.workflow-step.actionable:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
 .workflow-step p {
   margin: 0;
   overflow: hidden;
@@ -1067,6 +1078,17 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.connector-action {
+  min-height: 36px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: white;
+  background: var(--charcoal);
+  font-weight: 780;
+  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
 }
 
 .ok-dot,
@@ -2210,6 +2232,7 @@ textarea {
 .account-console-top button:hover:not(:disabled),
 .account-action-row button:hover:not(:disabled),
 .account-note-row button:hover:not(:disabled),
+.connector-action:hover:not(:disabled),
 .input-row button:hover:not(:disabled),
 .wide-button:hover:not(:disabled),
 .scrape-toolbar button:hover:not(:disabled),

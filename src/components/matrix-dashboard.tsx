@@ -33,6 +33,10 @@ import {
   type DraftBatchMetadata
 } from "@/lib/drafts/batches";
 import {
+  getScrapingConnectorRecoveryAction,
+  type ScrapingConnectorRecoveryAction
+} from "@/lib/scraping/recovery-action";
+import {
   DEFAULT_DRAFT_LIBRARY_ACCOUNT_ID,
   DRAFT_LIBRARY_ACCOUNT_OPTIONS,
   buildDraftLibraryStatus,
@@ -1022,17 +1026,17 @@ export function MatrixDashboard() {
   }
 
   async function handleXhsCdpCardClick() {
+    if (!localBrowserMode) {
+      openHostedLoginPage("https://www.xiaohongshu.com/", "小红书");
+      return;
+    }
+
     const latestStatus = await refreshXhsCdpStatus(true);
     if (latestStatus?.available && latestStatus.loggedIn) {
       return;
     }
 
-    if (localBrowserMode) {
-      void startXhsCdpBrowser();
-      return;
-    }
-
-    setStatus("公网版不能拉起本机真实浏览器，请在 localhost 本机版打开");
+    void startXhsCdpBrowser();
   }
 
   async function startEventwangManualLogin() {
@@ -1082,6 +1086,40 @@ export function MatrixDashboard() {
     } else {
       openHostedLoginPage("https://www.eventwang.cn/Gallery", "活动汪");
     }
+  }
+
+  function handleConnectorRecoveryAction(action: ScrapingConnectorRecoveryAction) {
+    if (action.kind === "eventwang-login") {
+      handleEventwangLoginCardClick();
+      return;
+    }
+
+    if (action.kind === "xhs-login") {
+      void handleXhsCdpCardClick();
+      return;
+    }
+
+    setStatus(`请到 Vercel 项目 Settings → Environment Variables 补齐配置：${action.detail}`);
+  }
+
+  function handleWorkflowStepRecovery(step: WorkflowStep) {
+    if (step.status !== "failed") return;
+
+    if (step.key === "material") {
+      setActiveSection("section-global-check");
+      setStatus(`正在定位素材采集失败：${step.detail}`);
+      void refreshScrapingHandshake(true);
+      return;
+    }
+
+    if (step.key === "text" || step.key === "image") {
+      setActiveSection("section-7");
+      setStatus(`正在定位${step.label}失败：${step.detail}`);
+      return;
+    }
+
+    setActiveSection("section-3");
+    setStatus(`正在定位${step.label}失败：${step.detail}`);
   }
 
   function saveWorkflowCheckpoint(input: {
@@ -2298,7 +2336,7 @@ export function MatrixDashboard() {
                       type="button"
                     >
                       <span>{XHS_COLLECTOR_PROFILE_LABEL}{xhsCollectorStatusHeadline(xhsLoginStatus, xhsCdpStatus)}</span>
-                      <small>{xhsCollectorStatusDetail(xhsLoginStatus, xhsCdpStatus, busyAction)}</small>
+                      <small>{xhsCollectorStatusDetail(xhsLoginStatus, xhsCdpStatus, busyAction, localBrowserMode)}</small>
                     </button>
                     <button
                       className={`status-pill account-health-card account-login-card ${eventwangStatusPillTone(eventwangConnector)}`}
@@ -2359,13 +2397,27 @@ export function MatrixDashboard() {
                 </div>
 
                 <div className="workflow-list">
-                  {workflowSteps.map((step) => (
-                    <div className={`workflow-step ${step.status}`} key={step.key}>
-                      <span>{step.label}</span>
-                      <strong>{workflowStatusText(step.status)}</strong>
-                      <p>{step.detail}</p>
-                    </div>
-                  ))}
+                  {workflowSteps.map((step) =>
+                    step.status === "failed" ? (
+                      <button
+                        className={`workflow-step ${step.status} actionable`}
+                        key={step.key}
+                        onClick={() => handleWorkflowStepRecovery(step)}
+                        title="点击定位失败原因"
+                        type="button"
+                      >
+                        <span>{step.label}</span>
+                        <strong>{workflowStatusText(step.status)}</strong>
+                        <p>{step.detail}</p>
+                      </button>
+                    ) : (
+                      <div className={`workflow-step ${step.status}`} key={step.key}>
+                        <span>{step.label}</span>
+                        <strong>{workflowStatusText(step.status)}</strong>
+                        <p>{step.detail}</p>
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             </div>
@@ -2395,24 +2447,38 @@ export function MatrixDashboard() {
             </div>
 
             <div className="connector-grid">
-              {(scrapingHandshake?.connectors ?? []).map((connector) => (
-                <article className={`connector-card ${connector.status}`} key={connector.key}>
-                  <div>
-                    <strong>{connector.label}</strong>
-                    <span>{connectorStatusText(connector.status)}</span>
-                  </div>
-                  <p>{connector.message}</p>
-                  <ul>
-                    {connector.checks.map((check) => (
-                      <li key={`${connector.key}-${check.label}`}>
-                        <i aria-hidden="true" className={check.ok ? "ok-dot" : "warn-dot"} />
-                        <span>{check.label}</span>
-                        <small>{check.detail}</small>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              ))}
+              {(scrapingHandshake?.connectors ?? []).map((connector) => {
+                const recoveryAction = getScrapingConnectorRecoveryAction(connector);
+
+                return (
+                  <article className={`connector-card ${connector.status}`} key={connector.key}>
+                    <div>
+                      <strong>{connector.label}</strong>
+                      <span>{connectorStatusText(connector.status)}</span>
+                    </div>
+                    <p>{connector.message}</p>
+                    <ul>
+                      {connector.checks.map((check) => (
+                        <li key={`${connector.key}-${check.label}`}>
+                          <i aria-hidden="true" className={check.ok ? "ok-dot" : "warn-dot"} />
+                          <span>{check.label}</span>
+                          <small>{check.detail}</small>
+                        </li>
+                      ))}
+                    </ul>
+                    {recoveryAction ? (
+                      <button
+                        className="connector-action"
+                        onClick={() => handleConnectorRecoveryAction(recoveryAction)}
+                        title={recoveryAction.detail}
+                        type="button"
+                      >
+                        {recoveryAction.label}
+                      </button>
+                    ) : null}
+                  </article>
+                );
+              })}
               {!scrapingHandshake && <EmptyState text="未检测" />}
             </div>
           </Panel>
@@ -2804,9 +2870,11 @@ function xhsCollectorStatusHeadline(loginStatus: XhsLoginStatus | null, cdpStatu
 function xhsCollectorStatusDetail(
   loginStatus: XhsLoginStatus | null,
   cdpStatus: XhsCdpStatus | null,
-  busyAction: string | null
+  busyAction: string | null,
+  localBrowserMode: boolean
 ) {
   if (busyAction === "xhs-cdp-status" || busyAction === "xhs-cdp-start") return "正在探测 9222 实时状态";
+  if (!localBrowserMode) return "点击打开小红书登录页";
   if (cdpStatus?.available) return `默认 CDP 已连接 · 小红书页 ${cdpStatus.xhsPageCount} · ${cdpStatus.loginDetail}`;
   if (loginStatus?.loggedIn) return "备用登录已在 · 点击启动默认 Edge CDP";
   if (loginStatus?.savedLogin) return "备用登录需刷新 · 点击启动默认 Edge CDP";
