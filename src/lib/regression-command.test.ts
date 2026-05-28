@@ -26,7 +26,12 @@ describe("regression command", () => {
       "src/app/api/drafts/route.test.ts",
       "src/components/matrix-dashboard.draft-list.test.ts",
       "src/components/matrix-dashboard.mobile-package.test.ts",
+      "src/components/matrix-dashboard.hosted-login.test.ts",
       "src/lib/publish/mobile-package.test.ts",
+      "src/lib/publish/public-origin.test.ts",
+      "src/lib/scraping/recovery-action.test.ts",
+      "src/lib/scraping/handshake.test.ts",
+      "src/lib/regression-command.test.ts",
       "src/app/mobile-publish/[packageId]/page.test.ts"
     ].forEach((testFile) => {
       expect(baselineCommand).toContain(testFile);

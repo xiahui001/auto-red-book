@@ -23,4 +23,14 @@ describe("matrix dashboard hosted manual login actions", () => {
     expect(workflowListSource).toContain('step.status === "failed"');
     expect(workflowListSource).toContain("onClick={() => handleWorkflowStepRecovery(step)}");
   });
+
+  it("routes hosted local-runtime recovery to localhost guidance", async () => {
+    const source = await readFile(path.join(process.cwd(), "src/components/matrix-dashboard.tsx"), "utf8");
+    const handlerStart = source.indexOf("function handleConnectorRecoveryAction");
+    const handlerEnd = source.indexOf("function handleWorkflowStepRecovery", handlerStart);
+    const handlerSource = source.slice(handlerStart, handlerEnd);
+
+    expect(handlerSource).toContain('action.kind === "local-runtime"');
+    expect(handlerSource).toContain("http://127.0.0.1:3000");
+  });
 });

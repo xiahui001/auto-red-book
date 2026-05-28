@@ -85,6 +85,9 @@ export async function getScrapingHandshake(options?: { fresh?: boolean }): Promi
     }
   ];
 
+  const eventwangConnector = connector("eventwang", "活动汪图库采集", eventwangChecks, "图库搜索与原图下载可用");
+  const xhsConnector = connector("xhs-hotspot", "小红书热点参考", xhsChecks, "小红书真实在线与参考链路可用");
+
   return {
     serverTime: new Date().toISOString(),
     workspaceRoot: WORKSPACE_ROOT,
@@ -94,8 +97,8 @@ export async function getScrapingHandshake(options?: { fresh?: boolean }): Promi
       outputRoot
     },
     connectors: [
-      connector("eventwang", "活动汪图库采集", eventwangChecks, "图库搜索与原图下载可用"),
-      connector("xhs-hotspot", "小红书热点参考", xhsChecks, "小红书真实在线与参考链路可用"),
+      hostedRuntime ? hostedLocalBrowserConnector(eventwangConnector, "活动汪登录和图库采集需在 localhost 本机版执行") : eventwangConnector,
+      hostedRuntime ? hostedLocalBrowserConnector(xhsConnector, "小红书登录态检测和热点参考需在 localhost 本机版执行") : xhsConnector,
       connector("supabase", "Supabase 持久化", supabaseChecks, "环境变量齐全后可按用户持久化")
     ],
     safeguards: [
@@ -107,6 +110,14 @@ export async function getScrapingHandshake(options?: { fresh?: boolean }): Promi
       "每次采集会优先保留已布置、美陈、展示等风格，并尽量覆盖五种以上不同场景。",
       "小红书链路仅做热点参考与人工审核队列，不做平台规避自动化。"
     ]
+  };
+}
+
+function hostedLocalBrowserConnector(connector: ScrapingConnector, message: string): ScrapingConnector {
+  return {
+    ...connector,
+    status: "blocked",
+    message
   };
 }
 

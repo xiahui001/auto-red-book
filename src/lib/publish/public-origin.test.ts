@@ -17,11 +17,11 @@ describe("mobile publish public origin", () => {
   it("prefers configured HTTPS public app URL for phone scanning", () => {
     const result = resolveMobilePublishOrigin({
       requestUrl: "http://127.0.0.1:3000/api/mobile-publish-packages",
-      appPublicUrl: "https://xhs.example.com/app",
+      appPublicUrl: "https://www.xhxhs.shop/app",
       getHeader: () => null
     });
 
-    expect(result.origin).toBe("https://xhs.example.com");
+    expect(result.origin).toBe("https://www.xhxhs.shop");
     expect(result.phoneScanReady).toBe(true);
     expect(result.shareReady).toBe(true);
     expect(result.warning).toBeNull();

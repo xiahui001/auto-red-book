@@ -1099,6 +1099,11 @@ export function MatrixDashboard() {
       return;
     }
 
+    if (action.kind === "local-runtime") {
+      setStatus(`公网版不能读取你电脑上的第三方登录态。请在本机运行 npm run dev，然后打开 http://127.0.0.1:3000 重新检测：${action.detail}`);
+      return;
+    }
+
     setStatus(`请到 Vercel 项目 Settings → Environment Variables 补齐配置：${action.detail}`);
   }
 

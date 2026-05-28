@@ -8,6 +8,8 @@ This project has a focused baseline for the ActivityWang-to-draft workflow.
 - ActivityWang collection searches live results first, paginates/scrolls, dedupes, and only backfills from the local image pool when live images are insufficient or unavailable.
 - Drafts keep assigned `generatedImages` and report real publishable image counts from usable URLs or local paths.
 - Draft library loading, auth session restore, mobile package creation, and mobile publish pages keep the current working behavior.
+- Hosted public pages do not claim to read local Xiaohongshu or ActivityWang login state; recovery actions point operators back to the localhost runtime.
+- Mobile publish packages use the configured HTTPS public origin for phone scanning and keep local-only URLs marked as not phone-scan-ready.
 
 ## Command
 
@@ -22,6 +24,8 @@ The command exits non-zero on failure. Before shipping broader changes, also run
 ```bash
 npm run regression
 ```
+
+Future changes to login detection, scraping handshake, recovery actions, or mobile publish QR origins must run `npm run test:baseline` before and after the change.
 
 ## Current Evidence
 
