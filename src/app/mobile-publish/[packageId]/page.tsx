@@ -107,10 +107,7 @@ export default function MobilePublishPage() {
         throw new Error("当前浏览器不支持多图系统分享，请用手机相机重新扫码");
       }
 
-      await navigator.share({
-        title: packageData.title,
-        files
-      });
+      await navigator.share({ files });
       setStatus("系统菜单已打开，请选择保存图片或存储到照片");
     } catch (error) {
       setStatus(buildShareErrorMessage(error, Boolean(chromeOpenUrl)));

@@ -114,6 +114,8 @@ describe("mobile publish package", () => {
 
     expect(html).toContain("void prepareShareFiles();");
     expect(html).toContain("const files = shareFiles;");
+    expect(html).toContain("await navigator.share({ files });");
+    expect(html).not.toContain("title: data.title");
     expect(saveClickHandler).not.toContain("buildShareFiles(data.imageUrls)");
     expect(html).toContain("请用手机相机重新扫码");
     expect(html).toContain("intent://");

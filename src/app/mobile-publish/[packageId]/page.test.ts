@@ -25,6 +25,8 @@ describe("mobile publish page package loading", () => {
     expect(source).toContain("void buildShareFiles(packageData.imageUrls)");
     expect(source).toContain("const files = shareFiles");
     expect(source).not.toContain("const files = await buildShareFiles(packageData.imageUrls)");
+    expect(source).toContain("await navigator.share({ files })");
+    expect(source).not.toContain("title: packageData.title");
     expect(source).toContain("请用手机相机重新扫码");
     expect(source).toContain("resolveAndroidChromeOpenUrl");
     expect(source).toContain("用 Chrome 打开后再点 Step 1");
