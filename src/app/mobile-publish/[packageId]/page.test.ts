@@ -27,6 +27,7 @@ describe("mobile publish page package loading", () => {
     expect(source).toContain("shouldUseSystemShareFiles");
     expect(source).toContain("startImagePackageDownload(packageData)");
     expect(source).toContain("buildImagePackageDownloadUrl");
+    expect(source).toContain("packageData.imageZipUrl ||");
     expect(source).toContain("/images.zip");
     expect(source).toContain("triggerImageDownload");
     expect(source).toContain("已开始下载图片包");

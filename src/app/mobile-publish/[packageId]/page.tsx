@@ -13,6 +13,7 @@ type MobilePackageData = {
   shareText: string;
   deeplinkUrl: string;
   imageUrls: string[];
+  imageZipUrl?: string;
 };
 
 export default function MobilePublishPage() {
@@ -234,7 +235,7 @@ function isIosUserAgent() {
 }
 
 function startImagePackageDownload(packageData: MobilePackageData) {
-  triggerImageDownload(buildImagePackageDownloadUrl(packageData.packageId), `xhs-${packageData.packageId}-images.zip`);
+  triggerImageDownload(buildImagePackageDownloadUrl(packageData), `xhs-${packageData.packageId}-images.zip`);
 }
 
 function triggerImageDownload(url: string, filename: string) {
@@ -247,8 +248,8 @@ function triggerImageDownload(url: string, filename: string) {
   anchor.remove();
 }
 
-function buildImagePackageDownloadUrl(packageId: string) {
-  return `/api/mobile-publish-packages/${encodeURIComponent(packageId)}/images.zip`;
+function buildImagePackageDownloadUrl(packageData: MobilePackageData) {
+  return packageData.imageZipUrl || `/api/mobile-publish-packages/${encodeURIComponent(packageData.packageId)}/images.zip`;
 }
 
 function shouldFallbackToDownload(error: unknown) {

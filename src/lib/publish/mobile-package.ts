@@ -27,6 +27,7 @@ export type MobilePublishPackage = {
   shareText: string;
   deeplinkUrl: string;
   imageUrls: string[];
+  imageZipUrl?: string;
   imageFiles: Array<{
     url: string;
     localPath?: string;
@@ -99,7 +100,7 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       shareText: pkg.shareText,
       deeplinkUrl: pkg.deeplinkUrl,
       imageUrls: pkg.imageUrls,
-      imageZipDownloadUrl: `/api/mobile-publish-packages/${encodeURIComponent(pkg.packageId)}/images.zip`,
+      imageZipDownloadUrl: pkg.imageZipUrl || `/api/mobile-publish-packages/${encodeURIComponent(pkg.packageId)}/images.zip`,
       imageZipFilename: `xhs-${safeSegment(pkg.packageId)}-images.zip`
     },
     null,

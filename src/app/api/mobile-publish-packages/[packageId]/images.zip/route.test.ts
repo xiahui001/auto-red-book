@@ -67,6 +67,28 @@ describe("/api/mobile-publish-packages/[packageId]/images.zip", () => {
     expect(fetch).toHaveBeenCalledWith(new URL("https://storage.local/cover.jpg"), { cache: "no-store" });
     expect(fetch).toHaveBeenCalledWith(new URL("https://storage.local/detail.png"), { cache: "no-store" });
   });
+
+  it("redirects to a prebuilt image zip when the package already has one", async () => {
+    await mkdir(TEST_PACKAGE_DIR, { recursive: true });
+    await writeFile(
+      path.join(TEST_PACKAGE_DIR, "package.json"),
+      JSON.stringify({
+        packageId: TEST_PACKAGE_ID,
+        imageZipUrl: "https://storage.local/packages/image-zip-route-test/images.zip",
+        imageUrls: ["https://storage.local/cover.jpg"],
+        imageFiles: [{ url: "https://storage.local/cover.jpg", filename: "draft-cover.jpg" }]
+      }),
+      "utf8"
+    );
+
+    const response = await GET(new Request(`http://localhost/api/mobile-publish-packages/${TEST_PACKAGE_ID}/images.zip`), {
+      params: { packageId: TEST_PACKAGE_ID }
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://storage.local/packages/image-zip-route-test/images.zip");
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
 
 function readLocalZipEntryNames(buffer: Buffer) {

@@ -12,6 +12,7 @@ import {
 } from "@/lib/publish/mobile-package";
 import { LOCAL_MOBILE_PACKAGE_ROOT, MOBILE_PUBLISH_BUCKET } from "@/lib/publish/mobile-package-store";
 import { resolveMobilePublishOrigin, type MobilePublishOrigin } from "@/lib/publish/public-origin";
+import { createStoreZip, type StoreZipEntry } from "@/lib/publish/store-zip";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { extractEventwangLocalPath } from "@/lib/xhs/draft-images";
 
@@ -47,6 +48,11 @@ const schema = z.object({
 });
 
 type UploadableImage = MobilePublishPackage["imageFiles"][number];
+type UploadedPackageImage = UploadableImage & {
+  zipData?: Buffer;
+  zipContentType?: string;
+  zipSourceName?: string;
+};
 type SupabaseServerClient = NonNullable<ReturnType<typeof createSupabaseServerClient>>;
 type StoredPackage = {
   publishPackage: MobilePublishPackage;
@@ -65,6 +71,7 @@ type MobilePublishPackageResponse = {
   shareText: string;
   imageCount: number;
   imageUrls: string[];
+  imageZipUrl?: string;
   skippedImageCount: number;
   storageProvider: "supabase" | "local";
   bucket: string | null;
@@ -127,6 +134,7 @@ export async function POST(request: Request) {
       shareText: storedPackage.publishPackage.shareText,
       imageCount: storedPackage.publishPackage.imageUrls.length,
       imageUrls: storedPackage.publishPackage.imageUrls,
+      imageZipUrl: storedPackage.publishPackage.imageZipUrl,
       skippedImageCount: storedPackage.skippedImageCount,
       storageProvider: storedPackage.storageProvider,
       bucket: storedPackage.bucket,
@@ -226,11 +234,14 @@ async function storeSupabasePackage(
   supabase: SupabaseServerClient
 ): Promise<StoredPackage> {
   await ensurePublicBucket(supabase);
-  const uploadedImages = await uploadPackageImages(basePackage.imageFiles, packageId, supabase);
+  const uploadedImageResults = await uploadPackageImages(basePackage.imageFiles, packageId, supabase);
+  const uploadedImages = uploadedImageResults.map(stripZipImageData);
+  const imageZipUrl = await uploadPackageImageZip(uploadedImageResults, packageId, supabase);
   const publishPackage: MobilePublishPackage = {
     ...basePackage,
     imageFiles: uploadedImages,
-    imageUrls: uploadedImages.map((image) => image.url)
+    imageUrls: uploadedImages.map((image) => image.url),
+    imageZipUrl: imageZipUrl || undefined
   };
   const packageDataPath = `packages/${packageId}/package.json`;
   const packageDataUpload = await uploadStorageObjectWithRetry(() =>
@@ -380,7 +391,7 @@ async function uploadPackageImages(
     uploadPackageImage(image, packageId, root, supabase)
   );
 
-  return uploaded.filter((image): image is UploadableImage => Boolean(image));
+  return uploaded.filter((image): image is UploadedPackageImage => Boolean(image));
 }
 
 async function uploadPackageImage(
@@ -388,7 +399,7 @@ async function uploadPackageImage(
   packageId: string,
   root: string,
   supabase: SupabaseServerClient
-): Promise<UploadableImage | null> {
+): Promise<UploadedPackageImage | null> {
   const candidatePaths = extractEventwangPathCandidates(image);
   if (!candidatePaths.length) {
     return isPublicHttpUrl(image.url) ? image : null;
@@ -400,10 +411,11 @@ async function uploadPackageImage(
 
   const file = await readFile(resolvedPath);
   const filename = safeFilename(image.filename || path.basename(resolvedPath));
+  const contentType = contentTypeForPath(resolvedPath);
   const storagePath = `packages/${packageId}/images/${filename}`;
   const uploadedFile = await uploadStorageObjectWithRetry(() =>
     supabase.storage.from(BUCKET).upload(storagePath, file, {
-      contentType: contentTypeForPath(resolvedPath),
+      contentType,
       cacheControl: "3600",
       upsert: true
     })
@@ -413,8 +425,44 @@ async function uploadPackageImage(
   return {
     ...image,
     url: supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl,
-    localPath: resolved.localPath
+    localPath: resolved.localPath,
+    zipData: file,
+    zipContentType: contentType,
+    zipSourceName: filename
   };
+}
+
+async function uploadPackageImageZip(
+  images: UploadedPackageImage[],
+  packageId: string,
+  supabase: SupabaseServerClient
+) {
+  if (!images.length || images.some((image) => !image.zipData)) return null;
+
+  const entries: StoreZipEntry[] = images.map((image, index) => ({
+    filename: buildOrderedImageFilename(
+      index,
+      image.zipContentType || contentTypeForPath(image.zipSourceName || image.url),
+      image.zipSourceName || image.filename || image.url
+    ),
+    data: image.zipData as Buffer
+  }));
+  const storagePath = `packages/${packageId}/images.zip`;
+  const uploadedZip = await uploadStorageObjectWithRetry(() =>
+    supabase.storage.from(BUCKET).upload(storagePath, createStoreZip(entries), {
+      contentType: "application/zip",
+      cacheControl: "3600",
+      upsert: true
+    })
+  );
+  if (uploadedZip.error) return null;
+
+  return supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
+}
+
+function stripZipImageData(image: UploadedPackageImage): UploadableImage {
+  const { zipData, zipContentType, zipSourceName, ...publishImage } = image;
+  return publishImage;
 }
 
 async function uploadStorageObjectWithRetry<T extends { error: unknown }>(operation: () => Promise<T>): Promise<T> {
@@ -520,6 +568,24 @@ function isMissingFileError(error: unknown) {
 
 function isPublicHttpUrl(value: string) {
   return /^https?:\/\//i.test(value.trim());
+}
+
+function buildOrderedImageFilename(index: number, contentType: string, sourceName: string) {
+  return `${String(index + 1).padStart(2, "0")}.${extensionForImage(contentType, sourceName)}`;
+}
+
+function extensionForImage(contentType: string, sourceName: string) {
+  const lowerType = contentType.toLowerCase();
+  if (lowerType.includes("png")) return "png";
+  if (lowerType.includes("webp")) return "webp";
+  if (lowerType.includes("gif")) return "gif";
+
+  const sourceExtension = path.extname(sourceName).replace(".", "").toLowerCase();
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(sourceExtension)) {
+    return sourceExtension === "jpeg" ? "jpg" : sourceExtension;
+  }
+
+  return "jpg";
 }
 
 function contentTypeForPath(filePath: string) {

@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 type MobilePackageForDownload = {
   packageId?: string;
   imageUrls?: string[];
+  imageZipUrl?: string;
   imageFiles?: Array<{
     url?: string;
     filename?: string;
@@ -28,6 +29,10 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const rawPackage = await readMobilePublishPackageData(safePackageId);
     const packageData = JSON.parse(rawPackage) as MobilePackageForDownload;
+    if (packageData.imageZipUrl) {
+      return Response.redirect(packageData.imageZipUrl, 302);
+    }
+
     const imageRefs = resolvePackageImageRefs(packageData);
     if (!imageRefs.length) return fail("IMAGES_NOT_FOUND", "Images not found", 404);
 

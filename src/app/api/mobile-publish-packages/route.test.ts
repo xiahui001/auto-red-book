@@ -175,6 +175,32 @@ describe("/api/mobile-publish-packages", () => {
     expect(imageUploadAttempt).toBe(2);
   });
 
+  it("uploads one ordered zip archive for phone downloads when creating a Supabase package", async () => {
+    await writeTestImages(2);
+    uploadFile.mockResolvedValue({ error: null });
+
+    const response = await POST(
+      jsonRequest({
+        draft: {
+          id: "draft-zip-package",
+          title: "Zip package",
+          body: "Prepare a single phone download.",
+          generatedImages: makeDraftImages(2)
+        }
+      })
+    );
+    const payload = await response.json();
+    const zipUpload = uploadFile.mock.calls.find(([storagePath]) => String(storagePath).endsWith("/images.zip"));
+    const packageUpload = uploadFile.mock.calls.find(([storagePath]) => String(storagePath).endsWith("/package.json"));
+    const packageData = JSON.parse(Buffer.from(packageUpload?.[1] as Buffer).toString("utf8"));
+
+    expect(response.status, JSON.stringify(payload)).toBe(200);
+    expect(payload.data.imageZipUrl).toMatch(/^https:\/\/storage\.local\/packages\/.+\/images\.zip$/);
+    expect(packageData.imageZipUrl).toBe(payload.data.imageZipUrl);
+    expect(zipUpload?.[2]).toEqual(expect.objectContaining({ contentType: "application/zip" }));
+    expect(readLocalZipEntryNames(Buffer.from(zipUpload?.[1] as Buffer))).toEqual(["01.jpg", "02.jpg"]);
+  });
+
   it("backfills draft library phone packages from the current account image pool", async () => {
     process.env.EVENTWANG_IMAGE_POOL_ROOT = path.join(
       process.cwd(),
@@ -525,6 +551,22 @@ function createDeferred() {
   });
 
   return { promise, resolve };
+}
+
+function readLocalZipEntryNames(buffer: Buffer) {
+  const names: string[] = [];
+  let offset = 0;
+
+  while (offset + 30 <= buffer.length && buffer.readUInt32LE(offset) === 0x04034b50) {
+    const compressedSize = buffer.readUInt32LE(offset + 18);
+    const filenameLength = buffer.readUInt16LE(offset + 26);
+    const extraLength = buffer.readUInt16LE(offset + 28);
+    const filenameStart = offset + 30;
+    names.push(buffer.subarray(filenameStart, filenameStart + filenameLength).toString("utf8"));
+    offset = filenameStart + filenameLength + extraLength + compressedSize;
+  }
+
+  return names;
 }
 
 function isMissingFileError(error: unknown) {
