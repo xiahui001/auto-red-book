@@ -15,20 +15,24 @@ describe("mobile publish page package loading", () => {
     expect(source).not.toContain("缺少发布包数据链接");
   });
 
-  it("uses browser downloads by default while keeping iOS system share as an enhancement", async () => {
+  it("uses one archive download by default while keeping iOS system share as an enhancement", async () => {
     const source = await readFile(
       path.join(process.cwd(), "src/app/mobile-publish/[packageId]/page.tsx"),
       "utf8"
     );
 
     expect(source).toContain("const [shareFiles, setShareFiles]");
-    expect(source).toContain('const [saveMode, setSaveMode] = useState<"download" | "share">("download")');
+    expect(source).toContain('const [saveMode, setSaveMode] = useState<"archive" | "share">("archive")');
     expect(source).toContain("void buildShareFiles(packageData.imageUrls)");
     expect(source).toContain("shouldUseSystemShareFiles");
-    expect(source).toContain("startBrowserImageDownloads(packageData)");
-    expect(source).toContain("buildImageDownloadUrl");
-    expect(source).toContain("const batchSize = 2");
+    expect(source).toContain("startImagePackageDownload(packageData)");
+    expect(source).toContain("buildImagePackageDownloadUrl");
+    expect(source).toContain("/images.zip");
     expect(source).toContain("triggerImageDownload");
+    expect(source).toContain("已开始下载图片包");
+    expect(source).not.toContain("startBrowserImageDownloads");
+    expect(source).not.toContain("buildImageDownloadUrl");
+    expect(source).not.toContain("const batchSize = 2");
     expect(source).not.toContain("index * 220");
     expect(source).toContain("const files = shareFiles");
     expect(source).not.toContain("const files = await buildShareFiles(packageData.imageUrls)");

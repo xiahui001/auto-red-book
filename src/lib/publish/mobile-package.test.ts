@@ -95,7 +95,7 @@ describe("mobile publish package", () => {
     expect(html).not.toContain("one-click import");
   });
 
-  it("uses browser downloads by default in the generated phone package HTML", () => {
+  it("uses one archive download by default in the generated phone package HTML", () => {
     const pkg = buildMobilePublishPackage(
       {
         id: "draft-4",
@@ -114,11 +114,15 @@ describe("mobile publish package", () => {
 
     expect(html).toContain("void prepareShareFiles();");
     expect(html).toContain("shouldUseSystemShareFiles");
-    expect(html).toContain("startBrowserImageDownloads");
-    expect(html).toContain("downloadFilenames");
-    expect(html).toContain("return data.imageUrls[imageIndex]");
-    expect(html).not.toContain("/api/mobile-publish-packages/");
-    expect(html).toContain("const batchSize = 2");
+    expect(html).toContain("startImagePackageDownload");
+    expect(html).toContain("imageZipDownloadUrl");
+    expect(html).toContain("/api/mobile-publish-packages/");
+    expect(html).toContain("/images.zip");
+    expect(html).toContain("已开始下载图片包");
+    expect(html).not.toContain("downloadFilenames");
+    expect(html).not.toContain("return data.imageUrls[imageIndex]");
+    expect(html).not.toContain("startBrowserImageDownloads");
+    expect(html).not.toContain("const batchSize = 2");
     expect(html).toContain("triggerImageDownload");
     expect(html).not.toContain("index * 220");
     expect(html).toContain("const files = shareFiles;");

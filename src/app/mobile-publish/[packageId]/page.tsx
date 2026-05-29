@@ -18,7 +18,7 @@ type MobilePackageData = {
 export default function MobilePublishPage() {
   const [packageData, setPackageData] = useState<MobilePackageData | null>(null);
   const [shareFiles, setShareFiles] = useState<File[] | null>(null);
-  const [saveMode, setSaveMode] = useState<"download" | "share">("download");
+  const [saveMode, setSaveMode] = useState<"archive" | "share">("archive");
   const [status, setStatus] = useState("正在加载发布包");
   const [busyAction, setBusyAction] = useState<MobilePublishActionStep["key"] | null>(null);
 
@@ -44,7 +44,7 @@ export default function MobilePublishPage() {
     if (!packageData) return;
 
     let cancelled = false;
-    const nextSaveMode = shouldUseSystemShareFiles() ? "share" : "download";
+    const nextSaveMode = shouldUseSystemShareFiles() ? "share" : "archive";
     setSaveMode(nextSaveMode);
     setShareFiles(null);
 
@@ -53,7 +53,7 @@ export default function MobilePublishPage() {
       return;
     }
 
-    if (nextSaveMode === "download") {
+    if (nextSaveMode === "archive") {
       setShareFiles([]);
       setStatus("发布包已就绪，请按顺序完成 3 步");
       return;
@@ -97,9 +97,9 @@ export default function MobilePublishPage() {
       if (!packageData.imageUrls.length) {
         throw new Error("当前没有配图，请跳过 Step 1，直接复制文案并打开小红书");
       }
-      if (saveMode === "download") {
-        startBrowserImageDownloads(packageData);
-        setStatus(`已开始下载 ${packageData.imageUrls.length} 张图片，完成后在小红书选择“下载”相册`);
+      if (saveMode === "archive") {
+        startImagePackageDownload(packageData);
+        setStatus(`已开始下载图片包，解压后按 01-${String(packageData.imageUrls.length).padStart(2, "0")} 选择图片`);
         return;
       }
 
@@ -108,14 +108,14 @@ export default function MobilePublishPage() {
       if (!files) {
         throw new Error("图片仍在准备，请稍后再点 Step 1");
       }
-      if (!navigator.share) throw new Error("当前浏览器不支持系统保存，已为安卓准备下载保存方式");
+      if (!navigator.share) throw new Error("当前浏览器不支持系统保存，已准备图片包下载方式");
       if (!files.length) {
         throw new Error("图片文件未能加载，无法保存到本机");
       }
       if (navigator.canShare && !navigator.canShare({ files })) {
-        setSaveMode("download");
-        startBrowserImageDownloads(packageData);
-        setStatus(`当前浏览器不支持多图系统保存，已改为下载 ${packageData.imageUrls.length} 张图片`);
+        setSaveMode("archive");
+        startImagePackageDownload(packageData);
+        setStatus("当前浏览器不支持多图系统保存，已改为下载图片包");
         return;
       }
 
@@ -123,9 +123,9 @@ export default function MobilePublishPage() {
       setStatus("系统菜单已打开，请选择保存图片或存储到照片");
     } catch (error) {
       if (saveMode === "share" && shouldFallbackToDownload(error)) {
-        setSaveMode("download");
-        startBrowserImageDownloads(packageData);
-        setStatus(`系统保存不可用，已改为下载 ${packageData.imageUrls.length} 张图片`);
+        setSaveMode("archive");
+        startImagePackageDownload(packageData);
+        setStatus("系统保存不可用，已改为下载图片包");
       } else {
         setStatus(buildSaveErrorMessage(error));
       }
@@ -233,17 +233,8 @@ function isIosUserAgent() {
   return /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
-function startBrowserImageDownloads(packageData: MobilePackageData) {
-  const batchSize = 2;
-  packageData.imageUrls.forEach((_, index) => {
-    const batchIndex = Math.floor(index / batchSize);
-    const runDownload = () => triggerImageDownload(buildImageDownloadUrl(packageData.packageId, index), `xhs-${index + 1}.jpg`);
-    if (batchIndex === 0) {
-      runDownload();
-      return;
-    }
-    window.setTimeout(runDownload, batchIndex * 700);
-  });
+function startImagePackageDownload(packageData: MobilePackageData) {
+  triggerImageDownload(buildImagePackageDownloadUrl(packageData.packageId), `xhs-${packageData.packageId}-images.zip`);
 }
 
 function triggerImageDownload(url: string, filename: string) {
@@ -256,8 +247,8 @@ function triggerImageDownload(url: string, filename: string) {
   anchor.remove();
 }
 
-function buildImageDownloadUrl(packageId: string, imageIndex: number) {
-  return `/api/mobile-publish-packages/${encodeURIComponent(packageId)}/images/${imageIndex + 1}`;
+function buildImagePackageDownloadUrl(packageId: string) {
+  return `/api/mobile-publish-packages/${encodeURIComponent(packageId)}/images.zip`;
 }
 
 function shouldFallbackToDownload(error: unknown) {

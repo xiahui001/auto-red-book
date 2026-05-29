@@ -10,8 +10,8 @@ export function buildMobilePublishActionSteps(imageCount: number): MobilePublish
     {
       key: "save-images",
       stepLabel: "Step 1",
-      label: "保存图片至手机",
-      detail: imageCount ? `点一次保存 ${imageCount} 张图到手机` : "当前无配图，可跳过此步"
+      label: "下载图片包",
+      detail: imageCount ? `下载后解压，按 01-${String(imageCount).padStart(2, "0")} 选择图片` : "当前无配图，可跳过此步"
     },
     {
       key: "copy-text",

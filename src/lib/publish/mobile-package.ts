@@ -99,7 +99,8 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       shareText: pkg.shareText,
       deeplinkUrl: pkg.deeplinkUrl,
       imageUrls: pkg.imageUrls,
-      downloadFilenames: pkg.imageFiles.map((image, index) => image.filename || `xhs-${index + 1}.jpg`)
+      imageZipDownloadUrl: `/api/mobile-publish-packages/${encodeURIComponent(pkg.packageId)}/images.zip`,
+      imageZipFilename: `xhs-${safeSegment(pkg.packageId)}-images.zip`
     },
     null,
     2
@@ -243,8 +244,8 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       <div class="actions" aria-label="手机发布步骤">
         <button class="step-button" id="save-images-btn" type="button">
           <span>Step 1</span>
-          <strong>保存图片至手机</strong>
-          <small>${pkg.imageUrls.length ? `点一次保存 ${pkg.imageUrls.length} 张图到手机` : "当前无配图，可跳过此步"}</small>
+          <strong>下载图片包</strong>
+          <small>${pkg.imageUrls.length ? `下载后解压，按 01-${String(pkg.imageUrls.length).padStart(2, "0")} 选择图片` : "当前无配图，可跳过此步"}</small>
         </button>
         <button class="step-button" id="copy-text-btn" type="button">
           <span>Step 2</span>
@@ -313,24 +314,12 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       return /iPad|iPhone|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     }
 
-    function buildImageDownloadUrl(imageIndex) {
-      return data.imageUrls[imageIndex] || "";
+    function buildImagePackageDownloadUrl() {
+      return data.imageZipDownloadUrl || "";
     }
 
-    function startBrowserImageDownloads() {
-      const batchSize = 2;
-      data.imageUrls.forEach((_, index) => {
-        const batchIndex = Math.floor(index / batchSize);
-        const runDownload = () => triggerImageDownload(
-          buildImageDownloadUrl(index),
-          data.downloadFilenames[index] || "xhs-" + (index + 1) + ".jpg"
-        );
-        if (batchIndex === 0) {
-          runDownload();
-          return;
-        }
-        window.setTimeout(runDownload, batchIndex * 700);
-      });
+    function startImagePackageDownload() {
+      triggerImageDownload(buildImagePackageDownloadUrl(), data.imageZipFilename || "xhs-images.zip");
     }
 
     function triggerImageDownload(url, filename) {
@@ -400,8 +389,8 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
           return;
         }
         if (!shouldUseSystemShareFiles()) {
-          startBrowserImageDownloads();
-          status.textContent = "已开始下载 " + data.imageUrls.length + " 张图片，完成后在小红书选择“下载”相册。";
+          startImagePackageDownload();
+          status.textContent = "已开始下载图片包，解压后按 01-" + String(data.imageUrls.length).padStart(2, "0") + " 选择图片。";
           return;
         }
         status.textContent = "正在打开系统分享菜单";
@@ -413,16 +402,16 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
           throw new Error("图片文件未能加载，无法保存到手机");
         }
         if (navigator.canShare && !navigator.canShare({ files })) {
-          startBrowserImageDownloads();
-          status.textContent = "当前浏览器不支持多图系统保存，已改为下载 " + data.imageUrls.length + " 张图片。";
+          startImagePackageDownload();
+          status.textContent = "当前浏览器不支持多图系统保存，已改为下载图片包。";
           return;
         }
         await navigator.share({ files });
         status.textContent = "系统菜单已打开，请选择保存图片或存储到照片。";
       } catch (error) {
         if (shouldUseSystemShareFiles() && shouldFallbackToDownload(error)) {
-          startBrowserImageDownloads();
-          status.textContent = "系统保存不可用，已改为下载 " + data.imageUrls.length + " 张图片。";
+          startImagePackageDownload();
+          status.textContent = "系统保存不可用，已改为下载图片包。";
         } else {
           status.textContent = saveErrorMessage(error);
         }
