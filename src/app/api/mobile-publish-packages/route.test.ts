@@ -199,6 +199,13 @@ describe("/api/mobile-publish-packages", () => {
     expect(packageData.imageZipUrl).toBe(payload.data.imageZipUrl);
     expect(zipUpload?.[2]).toEqual(expect.objectContaining({ contentType: "application/zip" }));
     expect(readLocalZipEntryNames(Buffer.from(zipUpload?.[1] as Buffer))).toEqual(["01.jpg", "02.jpg"]);
+    expect(updateBucket).toHaveBeenCalledWith(
+      "xhs-mobile-publish-packages",
+      expect.objectContaining({
+        allowedMimeTypes: expect.arrayContaining(["application/zip"]),
+        fileSizeLimit: 20_000_000
+      })
+    );
   });
 
   it("backfills draft library phone packages from the current account image pool", async () => {

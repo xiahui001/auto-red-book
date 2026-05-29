@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { buildMobilePublishActionSteps, type MobilePublishActionStep } from "@/lib/publish/mobile-actions";
+import { createStoreZip, type StoreZipEntry } from "@/lib/publish/store-zip";
 
 type MobilePackageData = {
   packageId: string;
@@ -99,7 +100,9 @@ export default function MobilePublishPage() {
         throw new Error("当前没有配图，请跳过 Step 1，直接复制文案并打开小红书");
       }
       if (saveMode === "archive") {
-        startImagePackageDownload(packageData);
+        await downloadImagePackage(packageData, (completed, total) => {
+          setStatus(`正在准备图片包 ${completed}/${total}`);
+        });
         setStatus(`已开始下载图片包，解压后按 01-${String(packageData.imageUrls.length).padStart(2, "0")} 选择图片`);
         return;
       }
@@ -115,7 +118,9 @@ export default function MobilePublishPage() {
       }
       if (navigator.canShare && !navigator.canShare({ files })) {
         setSaveMode("archive");
-        startImagePackageDownload(packageData);
+        await downloadImagePackage(packageData, (completed, total) => {
+          setStatus(`正在准备图片包 ${completed}/${total}`);
+        });
         setStatus("当前浏览器不支持多图系统保存，已改为下载图片包");
         return;
       }
@@ -125,7 +130,9 @@ export default function MobilePublishPage() {
     } catch (error) {
       if (saveMode === "share" && shouldFallbackToDownload(error)) {
         setSaveMode("archive");
-        startImagePackageDownload(packageData);
+        await downloadImagePackage(packageData, (completed, total) => {
+          setStatus(`正在准备图片包 ${completed}/${total}`);
+        });
         setStatus("系统保存不可用，已改为下载图片包");
       } else {
         setStatus(buildSaveErrorMessage(error));
@@ -234,8 +241,22 @@ function isIosUserAgent() {
   return /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
-function startImagePackageDownload(packageData: MobilePackageData) {
-  triggerImageDownload(buildImagePackageDownloadUrl(packageData), `xhs-${packageData.packageId}-images.zip`);
+async function downloadImagePackage(
+  packageData: MobilePackageData,
+  onProgress: (completed: number, total: number) => void
+) {
+  const filename = `xhs-${packageData.packageId}-images.zip`;
+  if (packageData.imageZipUrl) {
+    triggerImageDownload(packageData.imageZipUrl, filename);
+    return;
+  }
+
+  try {
+    const archive = await buildClientImageArchive(packageData.imageUrls, onProgress);
+    triggerBlobDownload(archive, filename);
+  } catch {
+    triggerImageDownload(buildImagePackageDownloadUrl(packageData), filename);
+  }
 }
 
 function triggerImageDownload(url: string, filename: string) {
@@ -248,8 +269,70 @@ function triggerImageDownload(url: string, filename: string) {
   anchor.remove();
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  triggerImageDownload(url, filename);
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 function buildImagePackageDownloadUrl(packageData: MobilePackageData) {
   return packageData.imageZipUrl || `/api/mobile-publish-packages/${encodeURIComponent(packageData.packageId)}/images.zip`;
+}
+
+async function buildClientImageArchive(
+  imageUrls: string[],
+  onProgress: (completed: number, total: number) => void
+) {
+  let completed = 0;
+  const entries = await mapWithConcurrency(imageUrls, 3, async (imageUrl, index): Promise<StoreZipEntry> => {
+    const response = await fetch(imageUrl, { cache: "no-store" });
+    if (!response.ok) throw new Error(`图片加载失败：HTTP ${response.status}`);
+
+    const blob = await response.blob();
+    const mime = blob.type || response.headers.get("content-type") || "image/jpeg";
+    const entry = {
+      filename: `${String(index + 1).padStart(2, "0")}.${extensionForImage(mime, imageUrl)}`,
+      data: new Uint8Array(await blob.arrayBuffer())
+    };
+    completed += 1;
+    onProgress(completed, imageUrls.length);
+    return entry;
+  });
+
+  return new Blob([createStoreZip(entries)], { type: "application/zip" });
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    })
+  );
+
+  return results;
+}
+
+function extensionForImage(contentType: string, sourceName: string) {
+  const lowerType = contentType.toLowerCase();
+  if (lowerType.includes("png")) return "png";
+  if (lowerType.includes("webp")) return "webp";
+  if (lowerType.includes("gif")) return "gif";
+
+  const match = sourceName.match(/\.([a-z0-9]+)(?:[?#]|$)/i);
+  const sourceExtension = match?.[1]?.toLowerCase() || "";
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(sourceExtension)) {
+    return sourceExtension === "jpeg" ? "jpg" : sourceExtension;
+  }
+
+  return "jpg";
 }
 
 function shouldFallbackToDownload(error: unknown) {

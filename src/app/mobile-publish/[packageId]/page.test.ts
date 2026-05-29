@@ -25,7 +25,9 @@ describe("mobile publish page package loading", () => {
     expect(source).toContain('const [saveMode, setSaveMode] = useState<"archive" | "share">("archive")');
     expect(source).toContain("void buildShareFiles(packageData.imageUrls)");
     expect(source).toContain("shouldUseSystemShareFiles");
-    expect(source).toContain("startImagePackageDownload(packageData)");
+    expect(source).toContain("downloadImagePackage(packageData");
+    expect(source).toContain("buildClientImageArchive");
+    expect(source).toContain("createStoreZip(entries)");
     expect(source).toContain("buildImagePackageDownloadUrl");
     expect(source).toContain("packageData.imageZipUrl ||");
     expect(source).toContain("/images.zip");

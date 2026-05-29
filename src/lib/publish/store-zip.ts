@@ -18,14 +18,14 @@ export function createStoreZip(entries: StoreZipEntry[]) {
     throw new Error("ZIP 文件数量超过上限");
   }
 
-  const localParts: Buffer[] = [];
-  const centralParts: Buffer[] = [];
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
   let offset = 0;
 
   for (const entry of entries) {
     const filename = safeZipEntryFilename(entry.filename);
-    const filenameBytes = Buffer.from(filename, "utf8");
-    const data = Buffer.from(entry.data);
+    const filenameBytes = new TextEncoder().encode(filename);
+    const data = entry.data;
     assertZipPartSize(filenameBytes.length, "ZIP 文件名过长");
     assertZipPartSize(data.length, "ZIP 图片过大");
     assertZipPartSize(offset, "ZIP 文件过大");
@@ -39,64 +39,67 @@ export function createStoreZip(entries: StoreZipEntry[]) {
     offset += localHeader.length + data.length;
   }
 
-  const centralDirectory = Buffer.concat(centralParts);
+  const centralDirectory = concatUint8Arrays(centralParts);
   assertZipPartSize(centralDirectory.length, "ZIP 文件过大");
   assertZipPartSize(offset, "ZIP 文件过大");
 
   const endRecord = buildEndRecord(entries.length, centralDirectory.length, offset);
-  return Buffer.concat([...localParts, centralDirectory, endRecord]);
+  return concatUint8Arrays([...localParts, centralDirectory, endRecord]);
 }
 
-function buildLocalHeader(filenameBytes: Buffer, data: Buffer, checksum: number) {
-  const header = Buffer.alloc(30 + filenameBytes.length);
-  header.writeUInt32LE(0x04034b50, 0);
-  header.writeUInt16LE(ZIP_VERSION_NEEDED, 4);
-  header.writeUInt16LE(ZIP_UTF8_FLAG, 6);
-  header.writeUInt16LE(ZIP_STORE_METHOD, 8);
-  header.writeUInt16LE(DOS_TIME, 10);
-  header.writeUInt16LE(DOS_DATE, 12);
-  header.writeUInt32LE(checksum, 14);
-  header.writeUInt32LE(data.length, 18);
-  header.writeUInt32LE(data.length, 22);
-  header.writeUInt16LE(filenameBytes.length, 26);
-  header.writeUInt16LE(0, 28);
-  filenameBytes.copy(header, 30);
+function buildLocalHeader(filenameBytes: Uint8Array, data: Uint8Array, checksum: number) {
+  const header = new Uint8Array(30 + filenameBytes.length);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, ZIP_VERSION_NEEDED, true);
+  view.setUint16(6, ZIP_UTF8_FLAG, true);
+  view.setUint16(8, ZIP_STORE_METHOD, true);
+  view.setUint16(10, DOS_TIME, true);
+  view.setUint16(12, DOS_DATE, true);
+  view.setUint32(14, checksum, true);
+  view.setUint32(18, data.length, true);
+  view.setUint32(22, data.length, true);
+  view.setUint16(26, filenameBytes.length, true);
+  view.setUint16(28, 0, true);
+  header.set(filenameBytes, 30);
   return header;
 }
 
-function buildCentralHeader(filenameBytes: Buffer, data: Buffer, checksum: number, offset: number) {
-  const header = Buffer.alloc(46 + filenameBytes.length);
-  header.writeUInt32LE(0x02014b50, 0);
-  header.writeUInt16LE(ZIP_VERSION_NEEDED, 4);
-  header.writeUInt16LE(ZIP_VERSION_NEEDED, 6);
-  header.writeUInt16LE(ZIP_UTF8_FLAG, 8);
-  header.writeUInt16LE(ZIP_STORE_METHOD, 10);
-  header.writeUInt16LE(DOS_TIME, 12);
-  header.writeUInt16LE(DOS_DATE, 14);
-  header.writeUInt32LE(checksum, 16);
-  header.writeUInt32LE(data.length, 20);
-  header.writeUInt32LE(data.length, 24);
-  header.writeUInt16LE(filenameBytes.length, 28);
-  header.writeUInt16LE(0, 30);
-  header.writeUInt16LE(0, 32);
-  header.writeUInt16LE(0, 34);
-  header.writeUInt16LE(0, 36);
-  header.writeUInt32LE(0, 38);
-  header.writeUInt32LE(offset, 42);
-  filenameBytes.copy(header, 46);
+function buildCentralHeader(filenameBytes: Uint8Array, data: Uint8Array, checksum: number, offset: number) {
+  const header = new Uint8Array(46 + filenameBytes.length);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x02014b50, true);
+  view.setUint16(4, ZIP_VERSION_NEEDED, true);
+  view.setUint16(6, ZIP_VERSION_NEEDED, true);
+  view.setUint16(8, ZIP_UTF8_FLAG, true);
+  view.setUint16(10, ZIP_STORE_METHOD, true);
+  view.setUint16(12, DOS_TIME, true);
+  view.setUint16(14, DOS_DATE, true);
+  view.setUint32(16, checksum, true);
+  view.setUint32(20, data.length, true);
+  view.setUint32(24, data.length, true);
+  view.setUint16(28, filenameBytes.length, true);
+  view.setUint16(30, 0, true);
+  view.setUint16(32, 0, true);
+  view.setUint16(34, 0, true);
+  view.setUint16(36, 0, true);
+  view.setUint32(38, 0, true);
+  view.setUint32(42, offset, true);
+  header.set(filenameBytes, 46);
   return header;
 }
 
 function buildEndRecord(entryCount: number, centralDirectorySize: number, centralDirectoryOffset: number) {
-  const header = Buffer.alloc(22);
-  header.writeUInt32LE(0x06054b50, 0);
-  header.writeUInt16LE(0, 4);
-  header.writeUInt16LE(0, 6);
-  header.writeUInt16LE(entryCount, 8);
-  header.writeUInt16LE(entryCount, 10);
-  header.writeUInt32LE(centralDirectorySize, 12);
-  header.writeUInt32LE(centralDirectoryOffset, 16);
-  header.writeUInt16LE(0, 20);
+  const header = new Uint8Array(22);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, 0x06054b50, true);
+  view.setUint16(4, 0, true);
+  view.setUint16(6, 0, true);
+  view.setUint16(8, entryCount, true);
+  view.setUint16(10, entryCount, true);
+  view.setUint32(12, centralDirectorySize, true);
+  view.setUint32(16, centralDirectoryOffset, true);
+  view.setUint16(20, 0, true);
   return header;
 }
 
@@ -115,6 +118,19 @@ function assertZipPartSize(value: number, message: string) {
   if (value > MAX_UINT32) {
     throw new Error(message);
   }
+}
+
+function concatUint8Arrays(parts: Uint8Array[]) {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+
+  return result;
 }
 
 function crc32(data: Uint8Array) {

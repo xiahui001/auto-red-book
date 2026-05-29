@@ -22,6 +22,7 @@ const BUCKET = MOBILE_PUBLISH_BUCKET;
 const EVENTWANG_ROOT = path.join(process.cwd(), "data", "eventwang-gallery");
 const LOCAL_PACKAGE_ROOT = LOCAL_MOBILE_PACKAGE_ROOT;
 const IMAGE_UPLOAD_CONCURRENCY = 4;
+const MOBILE_PACKAGE_FILE_SIZE_LIMIT_BYTES = 20_000_000;
 const STORAGE_UPLOAD_RETRY_DELAYS_MS = [150, 500];
 
 const imageSchema = z.object({
@@ -362,8 +363,8 @@ function buildPublicAccessWarning(existingWarning: string | null, storedPackage:
 async function ensurePublicBucket(supabase: SupabaseServerClient) {
   const bucketOptions = {
     public: true,
-    fileSizeLimit: "20MB",
-    allowedMimeTypes: ["application/json", "image/jpeg", "image/png", "image/webp", "image/gif"]
+    fileSizeLimit: MOBILE_PACKAGE_FILE_SIZE_LIMIT_BYTES,
+    allowedMimeTypes: ["application/json", "application/zip", "image/jpeg", "image/png", "image/webp", "image/gif"]
   };
   const buckets = await supabase.storage.listBuckets();
   if (buckets.error) throw buckets.error;
