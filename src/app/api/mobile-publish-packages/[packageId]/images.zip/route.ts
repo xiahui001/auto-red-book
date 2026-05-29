@@ -31,20 +31,19 @@ export async function GET(request: Request, context: RouteContext) {
     const imageRefs = resolvePackageImageRefs(packageData);
     if (!imageRefs.length) return fail("IMAGES_NOT_FOUND", "Images not found", 404);
 
-    const entries: StoreZipEntry[] = [];
-    for (const [index, imageRef] of imageRefs.entries()) {
+    const entries = await mapWithConcurrency(imageRefs, 4, async (imageRef, index): Promise<StoreZipEntry> => {
       const upstreamUrl = new URL(imageRef.url, request.url);
       const upstream = await fetch(upstreamUrl, { cache: "no-store" });
       if (!upstream.ok) {
-        return fail("IMAGE_DOWNLOAD_FAILED", `Image download failed: HTTP ${upstream.status}`, 502);
+        throw new ImageDownloadError(upstream.status);
       }
 
       const contentType = upstream.headers.get("content-type") || contentTypeForUrl(upstreamUrl.pathname);
-      entries.push({
+      return {
         filename: buildOrderedImageFilename(index, contentType, imageRef.filename || upstreamUrl.pathname),
         data: new Uint8Array(await upstream.arrayBuffer())
-      });
-    }
+      };
+    });
 
     const body = createStoreZip(entries);
     return new Response(body, {
@@ -58,6 +57,9 @@ export async function GET(request: Request, context: RouteContext) {
   } catch (error) {
     if (isMissingFileError(error)) {
       return fail("PACKAGE_NOT_FOUND", "Package not found", 404);
+    }
+    if (error instanceof ImageDownloadError) {
+      return fail("IMAGE_DOWNLOAD_FAILED", `Image download failed: HTTP ${error.status}`, 502);
     }
     return fail("IMAGE_ZIP_DOWNLOAD_FAILED", error instanceof Error ? error.message : "Image package download failed", 500);
   }
@@ -107,6 +109,30 @@ function contentTypeForUrl(pathname: string) {
 
 function contentDispositionForAttachment(filename: string) {
   return `attachment; filename="${filename.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
+      }
+    })
+  );
+
+  return results;
+}
+
+class ImageDownloadError extends Error {
+  constructor(readonly status: number) {
+    super(`Image download failed: HTTP ${status}`);
+  }
 }
 
 function isMissingFileError(error: unknown) {
