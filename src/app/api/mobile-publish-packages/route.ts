@@ -10,15 +10,16 @@ import {
   type MobilePublishDraft,
   type MobilePublishPackage
 } from "@/lib/publish/mobile-package";
+import { LOCAL_MOBILE_PACKAGE_ROOT, MOBILE_PUBLISH_BUCKET } from "@/lib/publish/mobile-package-store";
 import { resolveMobilePublishOrigin, type MobilePublishOrigin } from "@/lib/publish/public-origin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { extractEventwangLocalPath } from "@/lib/xhs/draft-images";
 
 export const runtime = "nodejs";
 
-const BUCKET = "xhs-mobile-publish-packages";
+const BUCKET = MOBILE_PUBLISH_BUCKET;
 const EVENTWANG_ROOT = path.join(process.cwd(), "data", "eventwang-gallery");
-const LOCAL_PACKAGE_ROOT = path.join(process.cwd(), "data", "mobile-publish-packages");
+const LOCAL_PACKAGE_ROOT = LOCAL_MOBILE_PACKAGE_ROOT;
 const IMAGE_UPLOAD_CONCURRENCY = 4;
 const STORAGE_UPLOAD_RETRY_DELAYS_MS = [150, 500];
 

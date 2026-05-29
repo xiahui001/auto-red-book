@@ -37,4 +37,12 @@ describe("regression command", () => {
       expect(baselineCommand).toContain(testFile);
     });
   });
+
+  it("exposes an all-backend baseline gate for API and lib changes", async () => {
+    const packageJson = JSON.parse(await readFile(path.join(process.cwd(), "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+
+    expect(packageJson.scripts?.["test:backend-baseline"]).toBe("vitest run src/lib src/app/api");
+  });
 });

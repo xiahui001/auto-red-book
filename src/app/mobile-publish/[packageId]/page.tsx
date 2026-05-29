@@ -18,23 +18,17 @@ type MobilePackageData = {
 export default function MobilePublishPage() {
   const [packageData, setPackageData] = useState<MobilePackageData | null>(null);
   const [shareFiles, setShareFiles] = useState<File[] | null>(null);
-  const [chromeOpenUrl, setChromeOpenUrl] = useState("");
+  const [saveMode, setSaveMode] = useState<"download" | "share">("download");
   const [status, setStatus] = useState("正在加载发布包");
   const [busyAction, setBusyAction] = useState<MobilePublishActionStep["key"] | null>(null);
 
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const nextDataUrl = resolvePackageDataUrl(currentUrl);
-    const nextChromeOpenUrl = resolveAndroidChromeOpenUrl(currentUrl);
-    setChromeOpenUrl(nextChromeOpenUrl);
 
     if (!nextDataUrl) {
       setStatus("发布包链接无效，请重新生成二维码");
       return;
-    }
-
-    if (shouldTryAndroidChromeOpen(currentUrl) && nextChromeOpenUrl) {
-      window.location.href = nextChromeOpenUrl;
     }
 
     void loadPackage(nextDataUrl);
@@ -50,10 +44,18 @@ export default function MobilePublishPage() {
     if (!packageData) return;
 
     let cancelled = false;
+    const nextSaveMode = shouldUseSystemShareFiles() ? "share" : "download";
+    setSaveMode(nextSaveMode);
     setShareFiles(null);
 
     if (!packageData.imageUrls.length) {
       setShareFiles([]);
+      return;
+    }
+
+    if (nextSaveMode === "download") {
+      setShareFiles([]);
+      setStatus("发布包已就绪，请按顺序完成 3 步");
       return;
     }
 
@@ -90,27 +92,43 @@ export default function MobilePublishPage() {
   async function saveImagesToPhone() {
     if (!packageData) return;
     setBusyAction("save-images");
-    setStatus("正在打开系统分享菜单");
 
     try {
+      if (!packageData.imageUrls.length) {
+        throw new Error("当前没有配图，请跳过 Step 1，直接复制文案并打开小红书");
+      }
+      if (saveMode === "download") {
+        startBrowserImageDownloads(packageData);
+        setStatus(`已开始下载 ${packageData.imageUrls.length} 张图片，完成后在小红书选择“下载”相册`);
+        return;
+      }
+
+      setStatus("正在打开系统分享菜单");
       const files = shareFiles;
       if (!files) {
         throw new Error("图片仍在准备，请稍后再点 Step 1");
       }
-      if (!navigator.share) {
-        throw new Error(buildShareUnavailableMessage(Boolean(chromeOpenUrl)));
-      }
+      if (!navigator.share) throw new Error("当前浏览器不支持系统保存，已为安卓准备下载保存方式");
       if (!files.length) {
         throw new Error("图片文件未能加载，无法保存到本机");
       }
       if (navigator.canShare && !navigator.canShare({ files })) {
-        throw new Error("当前浏览器不支持多图系统分享，请用手机相机重新扫码");
+        setSaveMode("download");
+        startBrowserImageDownloads(packageData);
+        setStatus(`当前浏览器不支持多图系统保存，已改为下载 ${packageData.imageUrls.length} 张图片`);
+        return;
       }
 
       await navigator.share({ files });
       setStatus("系统菜单已打开，请选择保存图片或存储到照片");
     } catch (error) {
-      setStatus(buildShareErrorMessage(error, Boolean(chromeOpenUrl)));
+      if (saveMode === "share" && shouldFallbackToDownload(error)) {
+        setSaveMode("download");
+        startBrowserImageDownloads(packageData);
+        setStatus(`系统保存不可用，已改为下载 ${packageData.imageUrls.length} 张图片`);
+      } else {
+        setStatus(buildSaveErrorMessage(error));
+      }
     } finally {
       setBusyAction(null);
     }
@@ -154,18 +172,13 @@ export default function MobilePublishPage() {
             </div>
             <h1>{packageData.title}</h1>
             <div className="mobile-publish-status">{status}</div>
-            {chromeOpenUrl ? (
-              <a className="mobile-publish-fallback" href={chromeOpenUrl}>
-                用 Chrome 打开后再点 Step 1
-              </a>
-            ) : null}
           </header>
 
           <section className="mobile-publish-panel mobile-publish-steps">
             {steps.map((step) => (
               <button
                 className="mobile-step-button"
-                disabled={busyAction !== null || (step.key === "save-images" && shareFiles === null)}
+                disabled={busyAction !== null || (step.key === "save-images" && saveMode === "share" && shareFiles === null)}
                 key={step.key}
                 onClick={() => runStep(step.key)}
                 type="button"
@@ -211,35 +224,40 @@ function resolvePackageDataUrl(currentUrl: URL) {
   return packageId ? `/api/mobile-publish-packages/${packageId}` : "";
 }
 
-function shouldTryAndroidChromeOpen(currentUrl: URL) {
-  return isAndroidUserAgent() && currentUrl.searchParams.get("chrome") !== "1";
+function shouldUseSystemShareFiles() {
+  return isIosUserAgent() && Boolean(navigator.share);
 }
 
-function resolveAndroidChromeOpenUrl(currentUrl: URL) {
-  if (!isAndroidUserAgent()) return "";
-
-  const targetUrl = new URL(currentUrl.href);
-  targetUrl.searchParams.set("chrome", "1");
-  return buildAndroidChromeIntentUrl(targetUrl);
+function isIosUserAgent() {
+  const userAgent = navigator.userAgent;
+  return /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
-function buildAndroidChromeIntentUrl(targetUrl: URL) {
-  const protocol = targetUrl.protocol.replace(":", "");
-  const fallbackUrl = encodeURIComponent(targetUrl.toString());
-  return `intent://${targetUrl.host}${targetUrl.pathname}${targetUrl.search}#Intent;scheme=${protocol};package=com.android.chrome;S.browser_fallback_url=${fallbackUrl};end`;
+function startBrowserImageDownloads(packageData: MobilePackageData) {
+  packageData.imageUrls.forEach((_, index) => {
+    window.setTimeout(() => {
+      const anchor = document.createElement("a");
+      anchor.href = buildImageDownloadUrl(packageData.packageId, index);
+      anchor.download = `xhs-${index + 1}.jpg`;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    }, index * 220);
+  });
 }
 
-function isAndroidUserAgent() {
-  return /android/i.test(navigator.userAgent);
+function buildImageDownloadUrl(packageId: string, imageIndex: number) {
+  return `/api/mobile-publish-packages/${encodeURIComponent(packageId)}/images/${imageIndex + 1}`;
 }
 
-function buildShareUnavailableMessage(hasChromeOpenUrl: boolean) {
-  return hasChromeOpenUrl
-    ? "当前手机浏览器不支持系统分享，请点“用 Chrome 打开”后再点 Step 1"
-    : "当前浏览器不支持系统分享，请用手机相机重新扫码";
+function shouldFallbackToDownload(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
+  return name === "NotAllowedError" || /permission denied|not allowed|not supported|canShare/i.test(message);
 }
 
-function buildShareErrorMessage(error: unknown, hasChromeOpenUrl: boolean) {
+function buildSaveErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
   const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
 
@@ -248,9 +266,7 @@ function buildShareErrorMessage(error: unknown, hasChromeOpenUrl: boolean) {
   }
 
   if (name === "NotAllowedError" || /permission denied/i.test(message)) {
-    return hasChromeOpenUrl
-      ? "当前手机浏览器拒绝系统分享，请点“用 Chrome 打开”后再点 Step 1"
-      : "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1";
+    return "当前浏览器拒绝系统保存，已切换为下载保存";
   }
 
   return message || "保存图片失败";

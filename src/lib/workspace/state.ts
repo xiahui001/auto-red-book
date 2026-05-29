@@ -101,12 +101,12 @@ export function normalizeWorkspacePrompts(input: Partial<WorkspacePrompts> | nul
 
 export function buildGlobalChecks(facts: GlobalCheckFacts): GlobalCheck[] {
   return [
-    makeCheck("auth", "用户登录", facts.authReady, "Supabase 注册登录状态"),
-    makeCheck("binding", "手机发布账号", facts.bindingReady, "手机端人工发布账号状态"),
-    makeCheck("text_scrape", "文案爬取", facts.textScrapeReady, "小红书参考内容采集"),
-    makeCheck("image_scrape", "图片爬取", facts.imageScrapeReady, "活动汪授权图片采集"),
-    makeCheck("text_generation", "文案生成", facts.textGenerationReady, "文案二创模型"),
-    makeCheck("image_generation", "图片应用", facts.imageGenerationReady, "活动汪原图配图")
+    makeCheck("auth", "登录状态", facts.authReady, "账号登录"),
+    makeCheck("binding", "手机发布号", facts.bindingReady, "手机端人工发布账号"),
+    makeCheck("text_scrape", "小红书参考", facts.textScrapeReady, "参考内容采集"),
+    makeCheck("image_scrape", "图片来源", facts.imageScrapeReady, "图片采集或本地图片池"),
+    makeCheck("text_generation", "文案生成", facts.textGenerationReady, "文案创作规则"),
+    makeCheck("image_generation", "配图准备", facts.imageGenerationReady, "草稿配图")
   ];
 }
 
@@ -169,7 +169,7 @@ function makeCheck(key: GlobalCheckKey, label: string, ready: boolean, detail: s
     key,
     label,
     light: ready ? "green" : "red",
-    detail: ready ? `${detail}可用` : `${detail}待处理`
+    detail: ready ? `${detail}已准备` : `${detail}待处理`
   };
 }
 

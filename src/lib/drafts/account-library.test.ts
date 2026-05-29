@@ -19,7 +19,7 @@ describe("draft account library", () => {
 
   it("builds account-scoped status text without all-history fallback copy", () => {
     expect(buildDraftLibraryStatus({ accountId: "A2", draftCount: 19, mode: "supabase_storage" })).toBe(
-      "已加载 校园 领域草稿 19 篇（Supabase）"
+      "已加载 校园 领域草稿 19 篇（云端记录）"
     );
 
     const emptyStatus = buildDraftLibraryStatus({ accountId: "A1", draftCount: 0, mode: "local_store" });
@@ -35,8 +35,8 @@ describe("draft account library", () => {
   });
 
   it("keeps storage mode labels stable for status regressions", () => {
-    expect(draftLibraryModeText("supabase_storage")).toBe("Supabase");
-    expect(draftLibraryModeText("supabase_seeded_from_local")).toBe("已同步到 Supabase");
+    expect(draftLibraryModeText("supabase_storage")).toBe("云端记录");
+    expect(draftLibraryModeText("supabase_seeded_from_local")).toBe("已同步到云端");
     expect(draftLibraryModeText("local_store_fallback")).toBe("本地备份");
     expect(draftLibraryModeText("local_store")).toBe("本地");
   });

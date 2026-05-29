@@ -98,7 +98,8 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       tags: pkg.tags,
       shareText: pkg.shareText,
       deeplinkUrl: pkg.deeplinkUrl,
-      imageUrls: pkg.imageUrls
+      imageUrls: pkg.imageUrls,
+      downloadFilenames: pkg.imageFiles.map((image, index) => image.filename || `xhs-${index + 1}.jpg`)
     },
     null,
     2
@@ -243,7 +244,7 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
         <button class="step-button" id="save-images-btn" type="button">
           <span>Step 1</span>
           <strong>保存图片至手机</strong>
-          <small>${pkg.imageUrls.length ? `系统会弹出保存 ${pkg.imageUrls.length} 张图的选择` : "当前无配图，可跳过此步"}</small>
+          <small>${pkg.imageUrls.length ? `点一次保存 ${pkg.imageUrls.length} 张图到手机` : "当前无配图，可跳过此步"}</small>
         </button>
         <button class="step-button" id="copy-text-btn" type="button">
           <span>Step 2</span>
@@ -282,7 +283,6 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
     const openXhsButton = document.getElementById("open-xhs-btn");
     let shareFiles = null;
     let shareFilesError = "";
-    const chromeOpenUrl = resolveAndroidChromeOpenUrl(window.location.href);
 
     shareSource.textContent = data.shareText;
     imagesRoot.innerHTML = data.imageUrls.length
@@ -290,18 +290,6 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
         '<img alt="图片 ' + (index + 1) + '" src="' + url + '" />'
       )).join("")
       : '<p class="note">当前发布包没有配图，请直接复制文案后在小红书手动补图。</p>';
-
-    if (chromeOpenUrl) {
-      const chromeLink = document.createElement("a");
-      chromeLink.className = "mobile-publish-fallback";
-      chromeLink.href = chromeOpenUrl;
-      chromeLink.textContent = "用 Chrome 打开后再点 Step 1";
-      status.insertAdjacentElement("afterend", chromeLink);
-    }
-
-    if (shouldTryAndroidChromeOpen()) {
-      window.location.href = chromeOpenUrl;
-    }
 
     async function buildShareFiles(imageUrls) {
       const files = [];
@@ -317,33 +305,44 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       return files;
     }
 
-    function shouldTryAndroidChromeOpen() {
-      return /android/i.test(navigator.userAgent) && !new URL(window.location.href).searchParams.has("chrome");
+    function shouldUseSystemShareFiles() {
+      return isIosUserAgent() && Boolean(navigator.share);
     }
 
-    function resolveAndroidChromeOpenUrl(value) {
-      if (!/android/i.test(navigator.userAgent)) return "";
-      const targetUrl = new URL(value);
-      targetUrl.searchParams.set("chrome", "1");
-      const protocol = targetUrl.protocol.replace(":", "");
-      const fallbackUrl = encodeURIComponent(targetUrl.toString());
-      return "intent://" + targetUrl.host + targetUrl.pathname + targetUrl.search + "#Intent;scheme=" + protocol + ";package=com.android.chrome;S.browser_fallback_url=" + fallbackUrl + ";end";
+    function isIosUserAgent() {
+      return /iPad|iPhone|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     }
 
-    function shareUnavailableMessage() {
-      return chromeOpenUrl
-        ? "当前手机浏览器不支持系统分享，请点“用 Chrome 打开”后再点 Step 1"
-        : "当前浏览器不支持系统分享，请用手机相机重新扫码";
+    function buildImageDownloadUrl(imageIndex) {
+      return data.imageUrls[imageIndex] || "";
     }
 
-    function shareErrorMessage(error) {
+    function startBrowserImageDownloads() {
+      data.imageUrls.forEach((_, index) => {
+        window.setTimeout(() => {
+          const anchor = document.createElement("a");
+          anchor.href = buildImageDownloadUrl(index);
+          anchor.download = data.downloadFilenames[index] || "xhs-" + (index + 1) + ".jpg";
+          anchor.rel = "noopener";
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+        }, index * 220);
+      });
+    }
+
+    function shouldFallbackToDownload(error) {
+      const message = error instanceof Error ? error.message : String(error || "");
+      const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
+      return name === "NotAllowedError" || /permission denied|not allowed|not supported|canShare/i.test(message);
+    }
+
+    function saveErrorMessage(error) {
       const message = error instanceof Error ? error.message : String(error || "");
       const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
       if (name === "AbortError") return "已取消系统分享。";
       if (name === "NotAllowedError" || /permission denied/i.test(message)) {
-        return chromeOpenUrl
-          ? "当前手机浏览器拒绝系统分享，请点“用 Chrome 打开”后再点 Step 1。"
-          : "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1。";
+        return "当前浏览器拒绝系统保存，已切换为下载保存。";
       }
       return message || "保存图片失败";
     }
@@ -354,6 +353,11 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
 
       if (!data.imageUrls.length) {
         shareFiles = [];
+        return;
+      }
+      if (!shouldUseSystemShareFiles()) {
+        shareFiles = [];
+        status.textContent = "发布包已就绪，请按顺序完成 3 步。";
         return;
       }
 
@@ -378,29 +382,38 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
 
     saveImagesButton.addEventListener("click", async () => {
       saveImagesButton.disabled = true;
-      status.textContent = "正在打开系统分享菜单";
       try {
         if (!data.imageUrls.length) {
           status.textContent = "当前没有配图，请跳过 Step 1，直接复制文案并打开小红书。";
           return;
         }
+        if (!shouldUseSystemShareFiles()) {
+          startBrowserImageDownloads();
+          status.textContent = "已开始下载 " + data.imageUrls.length + " 张图片，完成后在小红书选择“下载”相册。";
+          return;
+        }
+        status.textContent = "正在打开系统分享菜单";
         if (shareFiles === null) {
           throw new Error(shareFilesError || "图片仍在准备，请稍后再点 Step 1");
-        }
-        if (!navigator.share) {
-          throw new Error(shareUnavailableMessage());
         }
         const files = shareFiles;
         if (!files.length) {
           throw new Error("图片文件未能加载，无法保存到手机");
         }
         if (navigator.canShare && !navigator.canShare({ files })) {
-          throw new Error("当前浏览器不支持多图系统分享，请用手机相机重新扫码");
+          startBrowserImageDownloads();
+          status.textContent = "当前浏览器不支持多图系统保存，已改为下载 " + data.imageUrls.length + " 张图片。";
+          return;
         }
         await navigator.share({ files });
         status.textContent = "系统菜单已打开，请选择保存图片或存储到照片。";
       } catch (error) {
-        status.textContent = shareErrorMessage(error);
+        if (shouldUseSystemShareFiles() && shouldFallbackToDownload(error)) {
+          startBrowserImageDownloads();
+          status.textContent = "系统保存不可用，已改为下载 " + data.imageUrls.length + " 张图片。";
+        } else {
+          status.textContent = saveErrorMessage(error);
+        }
       } finally {
         saveImagesButton.disabled = false;
       }

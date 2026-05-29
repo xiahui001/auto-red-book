@@ -39,8 +39,8 @@ export function buildDraftLibrarySummary({
 }
 
 export function draftLibraryModeText(mode: string) {
-  if (mode === "supabase_storage") return "Supabase";
-  if (mode === "supabase_seeded_from_local") return "已同步到 Supabase";
+  if (mode === "supabase_storage") return "云端记录";
+  if (mode === "supabase_seeded_from_local") return "已同步到云端";
   if (mode === "local_store_fallback") return "本地备份";
   return "本地";
 }

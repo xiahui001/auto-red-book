@@ -26,7 +26,8 @@ describe("matrix dashboard mobile package entry", () => {
     expect(source).toContain("本地图片池");
     expect(source).toContain("本地图片池补图");
     expect(source).toContain("prepareDraftMediaImages");
-    expect(source).toContain('poolOnly: mode === "preview"');
+    expect(source).toContain("eventwangLiveEnabled");
+    expect(source).toContain('poolOnly: useLocalImagePoolOnly || mode === "preview"');
   });
 
   it("labels mixed ActivityWang and local pool images without calling the whole batch local", async () => {
@@ -43,7 +44,7 @@ describe("matrix dashboard mobile package entry", () => {
     expect(source).toContain("生成手机发布码前会再走正式补图流程");
   });
 
-  it("runs live ActivityWang collection before local fallback for mobile packages", async () => {
+  it("uses the local image pool unless ActivityWang linkage is enabled", async () => {
     const source = await readFile(path.join(process.cwd(), "src/components/matrix-dashboard.tsx"), "utf8");
     const ensureStart = source.indexOf("async function prepareDraftMediaImages");
     const ensureEnd = source.indexOf("async function createMobilePublishPackage", ensureStart);
@@ -54,7 +55,8 @@ describe("matrix dashboard mobile package entry", () => {
     expect(ensureSource).toContain("const draftHydrationKey = `${draft.id}:${mode}`");
     expect(ensureSource).toContain("draftImageHydrationPromisesRef.current.get(draftHydrationKey)");
     expect(ensureSource).not.toContain("draftImageHydrationPromisesRef.current.get(draft.id)");
-    expect(ensureSource).toContain('poolOnly: mode === "preview"');
+    expect(ensureSource).toContain('poolOnly: useLocalImagePoolOnly || mode === "preview"');
+    expect(ensureSource).toContain("活动汪联动关闭");
     expect(ensureSource).toContain("keywordAlternates: mode === \"package\"");
     expect(ensureSource).toContain("quickMode: mode === \"package\"");
     expect(ensureSource).not.toContain("keyword: mediaKeyword,\n          limit: IMAGES_PER_DRAFT,\n          poolOnly: true");
@@ -68,6 +70,25 @@ describe("matrix dashboard mobile package entry", () => {
 
     expect(ensureSource).not.toContain("\u672c\u5730\u56fe\u7247\u6c60\u6ca1\u6709\u5f53\u524d\u677f\u5757\u53ef\u7528\u56fe");
     expect(ensureSource).not.toContain("\u672c\u5730\u56fe\u7247\u6c60\u4ec5\u8865\u5230");
+  });
+
+  it("routes material collection and manual gallery pulls to the local image pool while quota is low", async () => {
+    const source = await readFile(path.join(process.cwd(), "src/components/matrix-dashboard.tsx"), "utf8");
+
+    expect(source).toContain("const [eventwangLiveEnabled, setEventwangLiveEnabled] = useState(false)");
+    expect(source).toContain("const [xhsCollectEnabled, setXhsCollectEnabled] = useState(true)");
+    expect(source).toContain("const useLocalXhsInference = !xhsCollectEnabled");
+    expect(source).toContain("const useLocalImagePoolOnly = !eventwangLiveEnabled");
+    expect(source).toContain("const blocker = useLocalImagePoolOnly ? null : getMaterialHardBlocker");
+    expect(source).toContain("本地图片池取图中");
+    expect(source).toContain("poolOnly: useLocalImagePoolOnly");
+    expect(source).toContain("\u5c0f\u7ea2\u4e66\u91c7\u96c6\u5f00\u5173");
+    expect(source).toContain("\u5c0f\u7ea2\u4e66\u91c7\u96c6");
+    expect(source).toContain("\u672c\u5730\u63a8\u7406");
+    expect(source).toContain("\u6d3b\u52a8\u6c6a\u6293\u53d6");
+    expect(source).not.toContain("\u6253\u5f00\u65f6\uff1a\u6d3b\u52a8\u6c6a\u6293\u53d6");
+    expect(source).not.toContain("\u5173\u95ed\u65f6\uff1a\u672c\u5730\u56fe\u7247\u6c60");
+    expect(source).toContain("活动汪联动开关");
   });
 
   it("automatically starts mobile package generation when a draft detail is open", async () => {

@@ -11,7 +11,7 @@ export function buildMobilePublishActionSteps(imageCount: number): MobilePublish
       key: "save-images",
       stepLabel: "Step 1",
       label: "保存图片至手机",
-      detail: `系统会弹出保存 ${imageCount} 张图的选择`
+      detail: imageCount ? `点一次保存 ${imageCount} 张图到手机` : "当前无配图，可跳过此步"
     },
     {
       key: "copy-text",

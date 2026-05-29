@@ -95,7 +95,7 @@ describe("mobile publish package", () => {
     expect(html).not.toContain("one-click import");
   });
 
-  it("prepares share files before Step 1 in the generated phone package HTML", () => {
+  it("uses browser downloads by default in the generated phone package HTML", () => {
     const pkg = buildMobilePublishPackage(
       {
         id: "draft-4",
@@ -113,13 +113,18 @@ describe("mobile publish package", () => {
     );
 
     expect(html).toContain("void prepareShareFiles();");
+    expect(html).toContain("shouldUseSystemShareFiles");
+    expect(html).toContain("startBrowserImageDownloads");
+    expect(html).toContain("downloadFilenames");
+    expect(html).toContain("return data.imageUrls[imageIndex]");
+    expect(html).not.toContain("/api/mobile-publish-packages/");
     expect(html).toContain("const files = shareFiles;");
     expect(html).toContain("await navigator.share({ files });");
     expect(html).not.toContain("title: data.title");
     expect(saveClickHandler).not.toContain("buildShareFiles(data.imageUrls)");
-    expect(html).toContain("请用手机相机重新扫码");
-    expect(html).toContain("intent://");
-    expect(html).toContain("用 Chrome 打开后再点 Step 1");
+    expect(html).not.toContain("请用手机相机重新扫码");
+    expect(html).not.toContain("intent://");
+    expect(html).not.toContain("用 Chrome 打开后再点 Step 1");
   });
 });
 

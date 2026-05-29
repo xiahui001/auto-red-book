@@ -492,6 +492,8 @@ export function MatrixDashboard() {
   const [reply, setReply] = useState<ReplyAnalysis | null>(null);
   const [scrapingHandshake, setScrapingHandshake] = useState<ScrapingHandshake | null>(null);
   const [eventwangGalleryResult, setEventwangGalleryResult] = useState<EventwangGalleryResult | null>(null);
+  const [xhsCollectEnabled, setXhsCollectEnabled] = useState(true);
+  const [eventwangLiveEnabled, setEventwangLiveEnabled] = useState(false);
   const [status, setStatus] = useState("待启动");
   const [mobilePublishPackage, setMobilePublishPackage] = useState<MobilePublishPackageResult | null>(null);
   const [mobilePublishPackageDraftId, setMobilePublishPackageDraftId] = useState<string | null>(null);
@@ -641,6 +643,8 @@ export function MatrixDashboard() {
   const mobilePackageBusy = busyAction === "mobile-publish-package";
   const taskBusy = Boolean(busyAction && busyAction !== "mobile-publish-package");
   const workflowBusy = busyAction === "workflow" || busyAction === "workflow-step";
+  const useLocalXhsInference = !xhsCollectEnabled;
+  const useLocalImagePoolOnly = !eventwangLiveEnabled;
   const nextWorkflowStep = workflowSteps[activeWorkflowStep];
   const runningWorkflowStep = workflowSteps.find((step) => step.status === "running");
   const targetKeywordOptions = useMemo(() => buildKeywordOptions(keywordPresets, targetAccountId), [keywordPresets, targetAccountId]);
@@ -671,16 +675,29 @@ export function MatrixDashboard() {
         authReady: Boolean(authUser),
         bindingReady: workspaceState.binding.state === "bound",
         textScrapeReady:
+          useLocalXhsInference ||
           Boolean(xhsCdpStatus?.available && xhsCdpStatus.loggedIn) ||
           isConnectorReady(scrapingHandshake, "xhs-hotspot") ||
           Boolean(xhsLoginStatus?.loggedIn),
         imageScrapeReady:
+          useLocalImagePoolOnly ||
           isConnectorReady(scrapingHandshake, "eventwang") ||
           Boolean(eventwangGalleryResult?.selectedCount),
         textGenerationReady: Boolean(workspaceState.prompts.textRemix.trim()),
         imageGenerationReady: Boolean(workspaceState.prompts.imageRemix.trim()) && (images.length > 0 || hasDraftCandidateImages)
       }),
-    [authUser, eventwangGalleryResult, hasDraftCandidateImages, images.length, scrapingHandshake, workspaceState, xhsCdpStatus, xhsLoginStatus]
+    [
+      authUser,
+      eventwangGalleryResult,
+      hasDraftCandidateImages,
+      images.length,
+      scrapingHandshake,
+      useLocalXhsInference,
+      useLocalImagePoolOnly,
+      workspaceState,
+      xhsCdpStatus,
+      xhsLoginStatus
+    ]
   );
   const eventwangConnector = useMemo(
     () => scrapingHandshake?.connectors.find((connector) => connector.key === "eventwang") ?? null,
@@ -800,7 +817,7 @@ export function MatrixDashboard() {
 
   async function saveWorkspaceState() {
     if (!authUser) {
-      setStatus("请先登录后保存 Prompt 和绑定状态");
+      setStatus("请先登录后保存创作规则和发布账号状态");
       return;
     }
 
@@ -812,7 +829,7 @@ export function MatrixDashboard() {
       lastAccountCode: keywordAccountId
     });
     setBusyAction(null);
-    setStatus(response.ok ? "Prompt 微调已保存" : response.error?.message || "保存失败");
+    setStatus(response.ok ? "创作规则已保存" : response.error?.message || "保存失败");
   }
 
   async function saveBindingState(nextState: WorkspaceState["binding"]["state"], detail: string) {
@@ -1088,6 +1105,22 @@ export function MatrixDashboard() {
     }
   }
 
+  function handleEventwangLiveToggle(nextEnabled: boolean) {
+    setEventwangLiveEnabled(nextEnabled);
+    setStatus(
+      nextEnabled
+        ? "已打开活动汪联动：后续素材采集会优先抓活动汪图库原图"
+        : "已关闭活动汪联动：后续素材采集只从本地图片池取图"
+    );
+    if (nextEnabled) void refreshScrapingHandshake(false);
+  }
+
+  function handleXhsCollectToggle(nextEnabled: boolean) {
+    setXhsCollectEnabled(nextEnabled);
+    setStatus(nextEnabled ? "已打开小红书采集：后续会抓取热门文案参考" : "已切到本地推理：后续跳过小红书采集");
+    if (nextEnabled) void refreshXhsCdpStatus(false);
+  }
+
   function handleConnectorRecoveryAction(action: ScrapingConnectorRecoveryAction) {
     if (action.kind === "eventwang-login") {
       handleEventwangLoginCardClick();
@@ -1198,7 +1231,7 @@ export function MatrixDashboard() {
 
     try {
       if (job.activeWorkflowStep <= 0) {
-        await prepareXhsCdpForUnattendedRun();
+        if (xhsCollectEnabled) await prepareXhsCdpForUnattendedRun();
         const materialResult = await runMaterialStep(job.keyword);
         references = materialResult.references;
         eventwangImages = materialResult.eventwangImages;
@@ -1287,7 +1320,7 @@ export function MatrixDashboard() {
     });
 
     try {
-      await prepareXhsCdpForUnattendedRun();
+      if (xhsCollectEnabled) await prepareXhsCdpForUnattendedRun();
       const materialResult = await runMaterialStep(workflowKeyword);
       saveWorkflowCheckpoint({
         keyword: workflowKeyword,
@@ -1343,32 +1376,32 @@ export function MatrixDashboard() {
   }
 
   async function prepareXhsCdpForUnattendedRun() {
-    updateWorkflowStep("material", "running", "准备小红书真实浏览器 CDP");
+    updateWorkflowStep("material", "running", "准备小红书采集浏览器");
     const latestStatus = await refreshXhsCdpStatus(false);
     if (latestStatus?.available && latestStatus.loggedIn) return true;
 
     if (!localBrowserMode) {
-      setStatus("公网版无法自动拉起本机 Edge CDP，本次会尝试 storageState 备用采集");
+      setStatus("当前线上页面不能直接打开本机采集浏览器，本次会尝试备用采集");
       return false;
     }
 
     const response = await postJson<{ started: boolean; message: string; cdpUrl: string }>("/api/xhs/cdp/start", {});
     if (!response.ok || !response.data) {
-      setStatus(response.error?.message || "真实浏览器启动失败，本次会尝试 storageState 备用采集");
+      setStatus(response.error?.message || "采集浏览器启动失败，本次会尝试备用采集");
       return false;
     }
 
-    setStatus("已请求启动 Edge CDP，等待 9222 端口进入可用状态");
+    setStatus("已请求打开本机采集浏览器，正在等待连接");
     for (const delayMs of [1500, 3000, 5000]) {
       await waitMs(delayMs);
       const statusAfterStart = await refreshXhsCdpStatus(false);
       if (statusAfterStart?.available && statusAfterStart.loggedIn) {
-        setStatus(`真实浏览器 CDP 已连接并已登录，小红书页面 ${statusAfterStart.xhsPageCount} 个`);
+        setStatus(`采集浏览器已连接并已登录，小红书页面 ${statusAfterStart.xhsPageCount} 个`);
         return true;
       }
     }
 
-    setStatus("真实浏览器 CDP 暂未连上，本次会继续尝试 storageState 备用采集");
+    setStatus("采集浏览器暂未连上，本次会继续尝试备用采集");
     return false;
   }
 
@@ -1405,9 +1438,9 @@ export function MatrixDashboard() {
     setEventwangGalleryResult(null);
     setMobilePublishPackage(null);
     const handshake = await ensureScrapeConnectorsReady();
-    if (!handshake) throw new Error("全局检测失败，请先刷新全局检测");
+    if (!handshake) throw new Error("准备检查失败，请先重新检查");
 
-    const blocker = getMaterialHardBlocker(handshake.connectors);
+    const blocker = useLocalImagePoolOnly ? null : getMaterialHardBlocker(handshake.connectors);
     if (blocker) {
       updateWorkflowStep("material", "failed", blocker);
       throw new Error(blocker);
@@ -1434,35 +1467,51 @@ export function MatrixDashboard() {
     let xhsItemCount = 0;
     let xhsSkippedReason: string | null = null;
 
-    updateWorkflowStep("material", "running", `小红书真实浏览器采集中：${searchTerms.join(" / ")}`);
-    setStatus(`正在按核心搜索词采集小红书热门文案：${searchTerms.join(" / ")}`);
-
-    const xhsResponse = await postJsonWithWorkflowRetry<{
-      items: XhsReference[];
-      itemCount: number;
-      strategy?: "cdp" | "storageState";
-      fallbackReason?: string;
-    }>({
-      url: "/api/xhs/scrape",
-      body: {
-        keyword: currentKeyword,
-        keywordAlternates: searchTerms.slice(1),
-        limit: TEST_XHS_REFERENCE_LIMIT
-      },
-      label: "小红书热门文案采集",
-      stepKey: "material"
-    });
-
-    if (xhsResponse.ok && xhsResponse.data) {
-      xhsItems = xhsResponse.data.items;
-      xhsItemCount = xhsResponse.data.itemCount;
-      xhsSkippedReason = xhsResponse.data.fallbackReason ?? null;
+    if (useLocalXhsInference) {
+      xhsSkippedReason = "小红书采集关闭，使用本地推理";
+      updateWorkflowStep("material", "running", `小红书采集关闭，准备本地推理：${searchTerms.join(" / ")}`);
+      setStatus(`小红书采集关闭，后续使用本地推理：${searchTerms.join(" / ")}`);
     } else {
-      xhsSkippedReason = xhsResponse.error?.message || "小红书参考采集失败，已降级使用活动汪素材";
+      updateWorkflowStep("material", "running", `小红书真实浏览器采集中：${searchTerms.join(" / ")}`);
+      setStatus(`正在按核心搜索词采集小红书热门文案：${searchTerms.join(" / ")}`);
+
+      const xhsResponse = await postJsonWithWorkflowRetry<{
+        items: XhsReference[];
+        itemCount: number;
+        strategy?: "cdp" | "storageState";
+        fallbackReason?: string;
+      }>({
+        url: "/api/xhs/scrape",
+        body: {
+          keyword: currentKeyword,
+          keywordAlternates: searchTerms.slice(1),
+          limit: TEST_XHS_REFERENCE_LIMIT
+        },
+        label: "小红书热门文案采集",
+        stepKey: "material"
+      });
+
+      if (xhsResponse.ok && xhsResponse.data) {
+        xhsItems = xhsResponse.data.items;
+        xhsItemCount = xhsResponse.data.itemCount;
+        xhsSkippedReason = xhsResponse.data.fallbackReason ?? null;
+      } else {
+        xhsSkippedReason = xhsResponse.error?.message || "小红书参考采集失败，已降级使用活动汪素材";
+      }
     }
 
-    updateWorkflowStep("material", "running", `${xhsSkippedReason ? "小红书参考已跳过" : `小红书 ${xhsItemCount} 条`}，活动汪核心词采集中`);
-    setStatus(`正在按核心搜索词采集活动汪图库原图：${searchTerms.join(" / ")}`);
+    updateWorkflowStep(
+      "material",
+      "running",
+      `${xhsSkippedReason ? "小红书参考已跳过" : `小红书 ${xhsItemCount} 条`}，${
+        useLocalImagePoolOnly ? "本地图片池取图中" : "活动汪核心词采集中"
+      }`
+    );
+    setStatus(
+      useLocalImagePoolOnly
+        ? `活动汪联动关闭，正在从本地图片池取图：${searchTerms.join(" / ")}`
+        : `正在按核心搜索词采集活动汪图库原图：${searchTerms.join(" / ")}`
+    );
     const eventwangResponse = await postJsonWithWorkflowRetry<EventwangGalleryResult>({
       url: "/api/materials/collect-eventwang-free",
       body: {
@@ -1471,9 +1520,10 @@ export function MatrixDashboard() {
         keywordAlternates: eventwangSearchTerms.slice(1),
         limit: TEST_EVENTWANG_IMAGE_LIMIT,
         maxCandidates: TEST_EVENTWANG_MAX_CANDIDATES,
-        quickMode: true
+        quickMode: true,
+        poolOnly: useLocalImagePoolOnly
       },
-      label: "活动汪图库原图采集",
+      label: useLocalImagePoolOnly ? "本地图片池取图" : "活动汪图库原图采集",
       stepKey: "material"
     });
 
@@ -1544,6 +1594,8 @@ export function MatrixDashboard() {
       setStatus(eventwangPartialStatus);
     } else if (eventwangResponse.data.blockingReason && eventwangResponse.data.selectedCount === 0) {
       setStatus(`活动汪已阻断：${eventwangResponse.data.blockingReason}`);
+    } else if (useLocalImagePoolOnly) {
+      setStatus(`素材采集完成：已从本地图片池取图，准备二创测试`);
     } else {
       setStatus(`素材采集完成：实际活动汪搜索词“${eventwangResponse.data.keyword}”，准备二创测试`);
     }
@@ -1845,7 +1897,9 @@ export function MatrixDashboard() {
         setStatus(
           mode === "preview"
             ? `正在加载草稿预览图：当前 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图`
-            : `当前草稿 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图，正在优先从活动汪抓取原图，抓不满再本地兜底`
+            : useLocalImagePoolOnly
+              ? `活动汪联动关闭，当前草稿 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图，正在从本地图片池补图`
+              : `当前草稿 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图，正在优先从活动汪抓取原图，抓不满再本地兜底`
         );
         const mediaResponse = await postJson<EventwangGalleryResult>("/api/materials/collect-eventwang-free", {
           accountId: draftAccountId || targetAccountId,
@@ -1854,7 +1908,7 @@ export function MatrixDashboard() {
           limit: requestImageLimit,
           maxCandidates: mode === "package" ? TEST_EVENTWANG_MAX_CANDIDATES : undefined,
           quickMode: mode === "package",
-          poolOnly: mode === "preview"
+          poolOnly: useLocalImagePoolOnly || mode === "preview"
         });
 
       if (!mediaResponse.ok || !mediaResponse.data) {
@@ -1867,7 +1921,9 @@ export function MatrixDashboard() {
         setStatus(
           mode === "preview"
             ? `本地图片池暂无当前板块可用图，当前草稿 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图`
-            : `活动汪和本地图片池暂未补到可用图，将用当前 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图继续生成手机发布包`
+            : useLocalImagePoolOnly
+              ? `本地图片池暂未补到可用图，将用当前 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图继续生成手机发布包`
+              : `活动汪和本地图片池暂未补到可用图，将用当前 ${existingImages.length}/${IMAGES_PER_DRAFT} 张图继续生成手机发布包`
         );
         return draft;
       }
@@ -1994,20 +2050,28 @@ export function MatrixDashboard() {
     const searchTerms = buildCoreSearchTerms(currentKeyword, 3);
     setBusyAction("eventwang-gallery");
     try {
-      const handshake = await ensureScrapeConnectorsReady();
-      const eventwangConnector = handshake?.connectors.find((connector) => connector.key === "eventwang");
-      if (eventwangConnector?.status !== "ready") {
-        setStatus(`活动汪真实在线检测未通过：${eventwangConnector?.message || "等待检测"}`);
-        return;
+      if (!useLocalImagePoolOnly) {
+        const handshake = await ensureScrapeConnectorsReady();
+        const eventwangConnector = handshake?.connectors.find((connector) => connector.key === "eventwang");
+        if (eventwangConnector?.status !== "ready") {
+          setStatus(`活动汪真实在线检测未通过：${eventwangConnector?.message || "等待检测"}`);
+          return;
+        }
       }
 
+      setStatus(
+        useLocalImagePoolOnly
+          ? `活动汪联动关闭，正在从本地图片池取图：${searchTerms.join(" / ")}`
+          : `正在采集活动汪图库原图：${searchTerms.join(" / ")}`
+      );
       const response = await postJson<EventwangGalleryResult>("/api/materials/collect-eventwang-free", {
         accountId: targetAccountId,
         keyword: currentKeyword,
         keywordAlternates: searchTerms.slice(1),
         limit: TEST_EVENTWANG_IMAGE_LIMIT,
         maxCandidates: TEST_EVENTWANG_MAX_CANDIDATES,
-        quickMode: true
+        quickMode: true,
+        poolOnly: useLocalImagePoolOnly
       });
 
       if (!response.ok || !response.data) {
@@ -2047,7 +2111,9 @@ export function MatrixDashboard() {
       setXhsReferences(buildEventwangReferences(response.data));
       setStatus(
         quotaFallbackStatus ??
-          `图库已采集 ${nextImages.length}/${TEST_EVENTWANG_IMAGE_LIMIT} 张原图，实际搜索词：${response.data.keyword}`
+          (useLocalImagePoolOnly
+            ? `本地图片池已取图 ${nextImages.length}/${TEST_EVENTWANG_IMAGE_LIMIT} 张`
+            : `图库已采集 ${nextImages.length}/${TEST_EVENTWANG_IMAGE_LIMIT} 张原图，实际搜索词：${response.data.keyword}`)
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "活动汪图库采集失败");
@@ -2066,13 +2132,13 @@ export function MatrixDashboard() {
     if (showBusy) setBusyAction(null);
 
     if (!response.ok || !response.data) {
-      setStatus(response.error?.message || "全局检测失败");
+      setStatus(response.error?.message || "准备检查失败");
       return null;
     }
 
     setScrapingHandshake(response.data);
     const readyCount = response.data.connectors.filter((connector) => connector.status === "ready").length;
-    setStatus(`全局检测完成：${readyCount}/${response.data.connectors.length} 个连接器可用`);
+    setStatus(`准备检查完成：${readyCount}/${response.data.connectors.length} 项可用`);
     return response.data;
   }
 
@@ -2196,7 +2262,7 @@ export function MatrixDashboard() {
         ) : (
           <div className="binding-row">
             <span>
-              手机方案会把文案和活动汪原图上传到 Supabase 公开发布包；手机扫码后同时显示 3 个上下排列按钮：Step 1 保存图片至手机，Step 2 复制文案，Step 3 打开小红书发布。
+              手机发布页会准备好图片和文案；扫码后按三步操作：保存图片、复制文案、打开小红书发布。
             </span>
           </div>
         )}
@@ -2211,7 +2277,7 @@ export function MatrixDashboard() {
           <div className="brand-lockup">
             <div className="brand-mark">X</div>
             <div>
-              <p className="eyebrow">Matrix Ops</p>
+              <p className="eyebrow">发布助手</p>
               <h1>正在校验登录状态</h1>
             </div>
           </div>
@@ -2231,8 +2297,8 @@ export function MatrixDashboard() {
         <div className="brand-lockup">
           <div className="brand-mark">X</div>
           <div>
-            <p className="eyebrow">Matrix Ops</p>
-            <h1>小红书矩阵中控</h1>
+            <p className="eyebrow">发布助手</p>
+            <h1>小红书发稿台</h1>
           </div>
         </div>
 
@@ -2268,8 +2334,8 @@ export function MatrixDashboard() {
           <div className="command-panel glass-panel">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">Material Flow</p>
-                <h3>素材站到小红书</h3>
+                <p className="eyebrow">发布流程</p>
+                <h3>选素材、写草稿、生成发布码</h3>
               </div>
               <Layers3 aria-hidden="true" size={22} />
             </div>
@@ -2279,7 +2345,7 @@ export function MatrixDashboard() {
                 <div className="mode-switch" aria-label="流程模式">
                   <button className={workflowMode === "review" ? "active" : ""} disabled={taskBusy} onClick={() => setWorkflowMode("review")} type="button">
                     <CheckCircle2 aria-hidden="true" size={16} />
-                    分步审核
+                    分步执行
                   </button>
                   <button className={workflowMode === "auto" ? "active" : ""} disabled={taskBusy} onClick={() => setWorkflowMode("auto")} type="button">
                     <Sparkles aria-hidden="true" size={16} />
@@ -2327,31 +2393,66 @@ export function MatrixDashboard() {
 
                 <section className="account-console" aria-label="采集白号登录状态">
                   <div className="account-health-grid">
-                    <button
-                      className={`status-pill account-health-card account-login-card ${xhsCollectorStatusPillTone(xhsLoginStatus, xhsCdpStatus)}`}
-                      disabled={
-                        busyAction === "login-status" ||
-                        busyAction === "xhs-login" ||
-                        busyAction === "xhs-cdp-status" ||
-                        busyAction === "xhs-cdp-start" ||
-                        taskBusy
-                      }
-                      onClick={handleXhsCdpCardClick}
-                      title={xhsCdpStatus?.message || xhsLoginStatus?.detail}
-                      type="button"
-                    >
-                      <span>{XHS_COLLECTOR_PROFILE_LABEL}{xhsCollectorStatusHeadline(xhsLoginStatus, xhsCdpStatus)}</span>
-                      <small>{xhsCollectorStatusDetail(xhsLoginStatus, xhsCdpStatus, busyAction, localBrowserMode)}</small>
-                    </button>
-                    <button
-                      className={`status-pill account-health-card account-login-card ${eventwangStatusPillTone(eventwangConnector)}`}
-                      disabled={busyAction === "handshake" || busyAction === "eventwang-login" || taskBusy}
-                      onClick={handleEventwangLoginCardClick}
-                      type="button"
-                    >
-                      <span>活动汪{eventwangStatusHeadline(eventwangConnector)}</span>
-                      <small>{eventwangLoggedIn ? "点击刷新真实状态" : "点击打开登录"}</small>
-                    </button>
+                    <div className="collector-control-group">
+                      <button
+                        className={`status-pill account-health-card account-login-card ${xhsCollectorStatusPillTone(xhsLoginStatus, xhsCdpStatus)}`}
+                        disabled={
+                          busyAction === "login-status" ||
+                          busyAction === "xhs-login" ||
+                          busyAction === "xhs-cdp-status" ||
+                          busyAction === "xhs-cdp-start" ||
+                          taskBusy ||
+                          useLocalXhsInference
+                        }
+                        onClick={handleXhsCdpCardClick}
+                        title={xhsCdpStatus?.message || xhsLoginStatus?.detail}
+                        type="button"
+                      >
+                        <span>{XHS_COLLECTOR_PROFILE_LABEL}{xhsCollectorStatusHeadline(xhsLoginStatus, xhsCdpStatus)}</span>
+                        <small>{useLocalXhsInference ? "本地推理已启用" : xhsCollectorStatusDetail(xhsLoginStatus, xhsCdpStatus, busyAction, localBrowserMode)}</small>
+                      </button>
+                      <label className={`source-mode-toggle ${xhsCollectEnabled ? "active" : ""} ${taskBusy ? "disabled" : ""}`}>
+                        <input
+                          aria-label="小红书采集开关"
+                          checked={xhsCollectEnabled}
+                          disabled={taskBusy}
+                          onChange={(event) => handleXhsCollectToggle(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span className="source-mode-toggle-track" aria-hidden="true">
+                          <span />
+                        </span>
+                        <span className="source-mode-toggle-copy">
+                          {xhsCollectEnabled ? "小红书采集" : "本地推理"}
+                        </span>
+                      </label>
+                    </div>
+                    <div className="collector-control-group">
+                      <button
+                        className={`status-pill account-health-card account-login-card ${eventwangStatusPillTone(eventwangConnector)}`}
+                        disabled={busyAction === "handshake" || busyAction === "eventwang-login" || taskBusy}
+                        onClick={handleEventwangLoginCardClick}
+                        type="button"
+                      >
+                        <span>活动汪{eventwangStatusHeadline(eventwangConnector)}</span>
+                        <small>{eventwangLoggedIn ? "点击刷新真实状态" : "点击打开登录"}</small>
+                      </button>
+                      <label className={`source-mode-toggle ${eventwangLiveEnabled ? "active" : ""} ${taskBusy ? "disabled" : ""}`}>
+                        <input
+                          aria-label="活动汪联动开关"
+                          checked={eventwangLiveEnabled}
+                          disabled={taskBusy}
+                          onChange={(event) => handleEventwangLiveToggle(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span className="source-mode-toggle-track" aria-hidden="true">
+                          <span />
+                        </span>
+                        <span className="source-mode-toggle-copy">
+                          {eventwangLiveEnabled ? "活动汪抓取" : "本地图片池"}
+                        </span>
+                      </label>
+                    </div>
                   </div>
                 </section>
 
@@ -2367,7 +2468,7 @@ export function MatrixDashboard() {
                 ) : (
                   <button className="wide-button" onClick={runMaterialToXhsWorkflow} disabled={taskBusy || !targetKeywordOptions.length}>
                     <Sparkles aria-hidden="true" size={17} />
-                    {workflowBusy ? "无人值守生成中" : "一键生成并入库"}
+                    {workflowBusy ? "正在生成" : "生成草稿并入库"}
                   </button>
                 )}
               </div>
@@ -2395,7 +2496,7 @@ export function MatrixDashboard() {
                   </div>
                   <div className="workflow-progress-meta">
                     <span>
-                      {workflowProgress.completed}/{workflowProgress.total} 个真实步骤完成
+                      {workflowProgress.completed}/{workflowProgress.total} 个步骤完成
                     </span>
                     <small>{workflowProgress.detail}</small>
                   </div>
@@ -2430,7 +2531,7 @@ export function MatrixDashboard() {
         </section>
 
         <section className="content-grid" hidden={activeSection === "section-0"}>
-          <Panel hidden={activeSection !== "section-global-check"} id="section-global-check" title="全局检测" eyebrow="Traffic Light Verification" icon={<PlugZap size={20} />}>
+          <Panel hidden={activeSection !== "section-global-check"} id="section-global-check" title="准备检查" eyebrow="发布前检查" icon={<PlugZap size={20} />}>
             <div className="traffic-grid">
               {globalChecks.map((check) => (
                 <article className={`traffic-card ${check.light}`} key={check.key}>
@@ -2446,7 +2547,7 @@ export function MatrixDashboard() {
             <div className="scrape-toolbar">
               <button onClick={runScrapingHandshake} disabled={busyAction === "handshake"}>
                 <RefreshCw aria-hidden="true" size={16} />
-                {busyAction === "handshake" ? "检测中" : "刷新全局检测"}
+                {busyAction === "handshake" ? "检查中" : "重新检查"}
               </button>
               <span>{scrapingHandshake?.crawlerBridge.samePort ? "前后端同端口" : "等待检测"}</span>
             </div>
@@ -2625,9 +2726,9 @@ export function MatrixDashboard() {
             </div>
           </Panel>
 
-          <Panel hidden={activeSection !== "section-7"} id="section-7" title="Prompt 微调" eyebrow="Text & Image Remix" icon={<Settings size={20} />}>
+          <Panel hidden={activeSection !== "section-7"} id="section-7" title="创作规则" eyebrow="文案与配图" icon={<Settings size={20} />}>
             <label className="field-label" htmlFor="textPrompt">
-              文案二创 Prompt
+              文案改写规则
             </label>
             <textarea
               id="textPrompt"
@@ -2642,7 +2743,7 @@ export function MatrixDashboard() {
             />
 
             <label className="field-label" htmlFor="imagePrompt">
-              图片二创 Prompt
+              配图筛选规则
             </label>
             <textarea
               id="imagePrompt"
@@ -2658,7 +2759,7 @@ export function MatrixDashboard() {
 
             <button className="wide-button" onClick={saveWorkspaceState} disabled={busyAction === "workspace-save"}>
               <Save aria-hidden="true" size={16} />
-              {busyAction === "workspace-save" ? "保存中" : "保存 Prompt 微调"}
+              {busyAction === "workspace-save" ? "保存中" : "保存创作规则"}
             </button>
           </Panel>
         </section>
@@ -2878,12 +2979,12 @@ function xhsCollectorStatusDetail(
   busyAction: string | null,
   localBrowserMode: boolean
 ) {
-  if (busyAction === "xhs-cdp-status" || busyAction === "xhs-cdp-start") return "正在探测 9222 实时状态";
+  if (busyAction === "xhs-cdp-status" || busyAction === "xhs-cdp-start") return "正在检查采集浏览器";
   if (!localBrowserMode) return "点击打开小红书登录页";
-  if (cdpStatus?.available) return `默认 CDP 已连接 · 小红书页 ${cdpStatus.xhsPageCount} · ${cdpStatus.loginDetail}`;
-  if (loginStatus?.loggedIn) return "备用登录已在 · 点击启动默认 Edge CDP";
-  if (loginStatus?.savedLogin) return "备用登录需刷新 · 点击启动默认 Edge CDP";
-  return "点击检测并启动默认 Edge CDP";
+  if (cdpStatus?.available) return `采集浏览器已连接 · 小红书页面 ${cdpStatus.xhsPageCount} 个`;
+  if (loginStatus?.loggedIn) return "已有备用登录 · 点击打开采集浏览器";
+  if (loginStatus?.savedLogin) return "备用登录需刷新 · 点击打开采集浏览器";
+  return "点击打开采集浏览器";
 }
 
 function xhsCdpStatusPillTone(status: XhsCdpStatus | null) {

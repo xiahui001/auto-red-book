@@ -60,7 +60,7 @@ describe("workspace state", () => {
       "text_generation",
       "image_generation"
     ]);
-    expect(checks.find((check) => check.key === "binding")?.label).toBe("手机发布账号");
+    expect(checks.find((check) => check.key === "binding")?.label).toBe("手机发布号");
     expect(checks.map((check) => check.light)).toEqual(["green", "red", "green", "red", "green", "red"]);
   });
 
