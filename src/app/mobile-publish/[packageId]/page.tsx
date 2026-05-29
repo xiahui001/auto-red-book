@@ -18,16 +18,23 @@ type MobilePackageData = {
 export default function MobilePublishPage() {
   const [packageData, setPackageData] = useState<MobilePackageData | null>(null);
   const [shareFiles, setShareFiles] = useState<File[] | null>(null);
+  const [chromeOpenUrl, setChromeOpenUrl] = useState("");
   const [status, setStatus] = useState("正在加载发布包");
   const [busyAction, setBusyAction] = useState<MobilePublishActionStep["key"] | null>(null);
 
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const nextDataUrl = resolvePackageDataUrl(currentUrl);
+    const nextChromeOpenUrl = resolveAndroidChromeOpenUrl(currentUrl);
+    setChromeOpenUrl(nextChromeOpenUrl);
 
     if (!nextDataUrl) {
       setStatus("发布包链接无效，请重新生成二维码");
       return;
+    }
+
+    if (shouldTryAndroidChromeOpen(currentUrl) && nextChromeOpenUrl) {
+      window.location.href = nextChromeOpenUrl;
     }
 
     void loadPackage(nextDataUrl);
@@ -91,7 +98,7 @@ export default function MobilePublishPage() {
         throw new Error("图片仍在准备，请稍后再点 Step 1");
       }
       if (!navigator.share) {
-        throw new Error(buildCameraScanPrompt());
+        throw new Error(buildShareUnavailableMessage(Boolean(chromeOpenUrl)));
       }
       if (!files.length) {
         throw new Error("图片文件未能加载，无法保存到本机");
@@ -106,7 +113,7 @@ export default function MobilePublishPage() {
       });
       setStatus("系统菜单已打开，请选择保存图片或存储到照片");
     } catch (error) {
-      setStatus(buildShareErrorMessage(error));
+      setStatus(buildShareErrorMessage(error, Boolean(chromeOpenUrl)));
     } finally {
       setBusyAction(null);
     }
@@ -150,6 +157,11 @@ export default function MobilePublishPage() {
             </div>
             <h1>{packageData.title}</h1>
             <div className="mobile-publish-status">{status}</div>
+            {chromeOpenUrl ? (
+              <a className="mobile-publish-fallback" href={chromeOpenUrl}>
+                用 Chrome 打开后再点 Step 1
+              </a>
+            ) : null}
           </header>
 
           <section className="mobile-publish-panel mobile-publish-steps">
@@ -202,11 +214,35 @@ function resolvePackageDataUrl(currentUrl: URL) {
   return packageId ? `/api/mobile-publish-packages/${packageId}` : "";
 }
 
-function buildCameraScanPrompt() {
-  return "当前浏览器不支持系统分享，请用手机相机重新扫码";
+function shouldTryAndroidChromeOpen(currentUrl: URL) {
+  return isAndroidUserAgent() && currentUrl.searchParams.get("chrome") !== "1";
 }
 
-function buildShareErrorMessage(error: unknown) {
+function resolveAndroidChromeOpenUrl(currentUrl: URL) {
+  if (!isAndroidUserAgent()) return "";
+
+  const targetUrl = new URL(currentUrl.href);
+  targetUrl.searchParams.set("chrome", "1");
+  return buildAndroidChromeIntentUrl(targetUrl);
+}
+
+function buildAndroidChromeIntentUrl(targetUrl: URL) {
+  const protocol = targetUrl.protocol.replace(":", "");
+  const fallbackUrl = encodeURIComponent(targetUrl.toString());
+  return `intent://${targetUrl.host}${targetUrl.pathname}${targetUrl.search}#Intent;scheme=${protocol};package=com.android.chrome;S.browser_fallback_url=${fallbackUrl};end`;
+}
+
+function isAndroidUserAgent() {
+  return /android/i.test(navigator.userAgent);
+}
+
+function buildShareUnavailableMessage(hasChromeOpenUrl: boolean) {
+  return hasChromeOpenUrl
+    ? "当前手机浏览器不支持系统分享，请点“用 Chrome 打开”后再点 Step 1"
+    : "当前浏览器不支持系统分享，请用手机相机重新扫码";
+}
+
+function buildShareErrorMessage(error: unknown, hasChromeOpenUrl: boolean) {
   const message = error instanceof Error ? error.message : String(error || "");
   const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
 
@@ -215,7 +251,9 @@ function buildShareErrorMessage(error: unknown) {
   }
 
   if (name === "NotAllowedError" || /permission denied/i.test(message)) {
-    return "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1";
+    return hasChromeOpenUrl
+      ? "当前手机浏览器拒绝系统分享，请点“用 Chrome 打开”后再点 Step 1"
+      : "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1";
   }
 
   return message || "保存图片失败";

@@ -141,6 +141,19 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       border: 0;
       font: inherit;
     }
+    .mobile-publish-fallback {
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height: 46px;
+      padding: 0 14px;
+      border-radius: 12px;
+      color:#1c1a17;
+      background: rgba(28,26,23,.08);
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration:none;
+    }
     .step-button {
       display:grid;
       grid-template-columns: 68px 1fr;
@@ -269,6 +282,7 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
     const openXhsButton = document.getElementById("open-xhs-btn");
     let shareFiles = null;
     let shareFilesError = "";
+    const chromeOpenUrl = resolveAndroidChromeOpenUrl(window.location.href);
 
     shareSource.textContent = data.shareText;
     imagesRoot.innerHTML = data.imageUrls.length
@@ -276,6 +290,18 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
         '<img alt="图片 ' + (index + 1) + '" src="' + url + '" />'
       )).join("")
       : '<p class="note">当前发布包没有配图，请直接复制文案后在小红书手动补图。</p>';
+
+    if (chromeOpenUrl) {
+      const chromeLink = document.createElement("a");
+      chromeLink.className = "mobile-publish-fallback";
+      chromeLink.href = chromeOpenUrl;
+      chromeLink.textContent = "用 Chrome 打开后再点 Step 1";
+      status.insertAdjacentElement("afterend", chromeLink);
+    }
+
+    if (shouldTryAndroidChromeOpen()) {
+      window.location.href = chromeOpenUrl;
+    }
 
     async function buildShareFiles(imageUrls) {
       const files = [];
@@ -291,8 +317,23 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       return files;
     }
 
-    function cameraScanPrompt() {
-      return "当前浏览器不支持系统分享，请用手机相机重新扫码";
+    function shouldTryAndroidChromeOpen() {
+      return /android/i.test(navigator.userAgent) && !new URL(window.location.href).searchParams.has("chrome");
+    }
+
+    function resolveAndroidChromeOpenUrl(value) {
+      if (!/android/i.test(navigator.userAgent)) return "";
+      const targetUrl = new URL(value);
+      targetUrl.searchParams.set("chrome", "1");
+      const protocol = targetUrl.protocol.replace(":", "");
+      const fallbackUrl = encodeURIComponent(targetUrl.toString());
+      return "intent://" + targetUrl.host + targetUrl.pathname + targetUrl.search + "#Intent;scheme=" + protocol + ";package=com.android.chrome;S.browser_fallback_url=" + fallbackUrl + ";end";
+    }
+
+    function shareUnavailableMessage() {
+      return chromeOpenUrl
+        ? "当前手机浏览器不支持系统分享，请点“用 Chrome 打开”后再点 Step 1"
+        : "当前浏览器不支持系统分享，请用手机相机重新扫码";
     }
 
     function shareErrorMessage(error) {
@@ -300,7 +341,9 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
       if (name === "AbortError") return "已取消系统分享。";
       if (name === "NotAllowedError" || /permission denied/i.test(message)) {
-        return "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1。";
+        return chromeOpenUrl
+          ? "当前手机浏览器拒绝系统分享，请点“用 Chrome 打开”后再点 Step 1。"
+          : "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1。";
       }
       return message || "保存图片失败";
     }
@@ -345,7 +388,7 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
           throw new Error(shareFilesError || "图片仍在准备，请稍后再点 Step 1");
         }
         if (!navigator.share) {
-          throw new Error(cameraScanPrompt());
+          throw new Error(shareUnavailableMessage());
         }
         const files = shareFiles;
         if (!files.length) {
