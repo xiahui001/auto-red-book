@@ -208,6 +208,32 @@ describe("/api/mobile-publish-packages", () => {
     );
   });
 
+  it("skips prebuilt zip upload when the archive would exceed the storage limit", async () => {
+    await writeSizedTestImages([11_000_000, 10_000_000]);
+    uploadFile.mockResolvedValue({ error: null });
+
+    const response = await POST(
+      jsonRequest({
+        draft: {
+          id: "draft-large-zip-skip",
+          title: "Large zip package",
+          body: "Do not block code generation on an oversized archive.",
+          generatedImages: makeDraftImages(2)
+        }
+      })
+    );
+    const payload = await response.json();
+    const zipUpload = uploadFile.mock.calls.find(([storagePath]) => String(storagePath).endsWith("/images.zip"));
+    const packageUpload = uploadFile.mock.calls.find(([storagePath]) => String(storagePath).endsWith("/package.json"));
+    const packageData = JSON.parse(Buffer.from(packageUpload?.[1] as Buffer).toString("utf8"));
+
+    expect(response.status, JSON.stringify(payload)).toBe(200);
+    expect(payload.data.storageProvider).toBe("supabase");
+    expect(payload.data.imageZipUrl).toBeUndefined();
+    expect(packageData.imageZipUrl).toBeUndefined();
+    expect(zipUpload).toBeUndefined();
+  });
+
   it("backfills draft library phone packages from the current account image pool", async () => {
     process.env.EVENTWANG_IMAGE_POOL_ROOT = path.join(
       process.cwd(),
@@ -458,6 +484,14 @@ async function writeTestImages(count: number) {
     const dir = path.join(TEST_IMAGE_DIR, String(index + 1));
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "photo.jpg"), `test image ${index + 1}`, "utf8");
+  }
+}
+
+async function writeSizedTestImages(sizes: number[]) {
+  for (const [index, size] of sizes.entries()) {
+    const dir = path.join(TEST_IMAGE_DIR, String(index + 1));
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "photo.jpg"), Buffer.alloc(size, index + 1));
   }
 }
 

@@ -448,6 +448,10 @@ async function uploadPackageImageZip(
     ),
     data: image.zipData as Buffer
   }));
+  if (estimateStoreZipSize(entries) > MOBILE_PACKAGE_FILE_SIZE_LIMIT_BYTES) {
+    return null;
+  }
+
   const storagePath = `packages/${packageId}/images.zip`;
   const uploadedZip = await uploadStorageObjectWithRetry(() =>
     supabase.storage.from(BUCKET).upload(storagePath, createStoreZip(entries), {
@@ -459,6 +463,13 @@ async function uploadPackageImageZip(
   if (uploadedZip.error) return null;
 
   return supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
+}
+
+function estimateStoreZipSize(entries: StoreZipEntry[]) {
+  return entries.reduce((total, entry) => {
+    const filenameLength = new TextEncoder().encode(entry.filename).length;
+    return total + entry.data.byteLength + 30 + filenameLength + 46 + filenameLength;
+  }, 22);
 }
 
 function stripZipImageData(image: UploadedPackageImage): UploadableImage {
