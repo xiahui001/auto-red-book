@@ -27,6 +27,9 @@ describe("mobile publish page package loading", () => {
     expect(source).toContain("shouldUseSystemShareFiles");
     expect(source).toContain("startBrowserImageDownloads(packageData)");
     expect(source).toContain("buildImageDownloadUrl");
+    expect(source).toContain("const batchSize = 2");
+    expect(source).toContain("triggerImageDownload");
+    expect(source).not.toContain("index * 220");
     expect(source).toContain("const files = shareFiles");
     expect(source).not.toContain("const files = await buildShareFiles(packageData.imageUrls)");
     expect(source).toContain("await navigator.share({ files })");

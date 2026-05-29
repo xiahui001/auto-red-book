@@ -318,17 +318,29 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
     }
 
     function startBrowserImageDownloads() {
+      const batchSize = 2;
       data.imageUrls.forEach((_, index) => {
-        window.setTimeout(() => {
-          const anchor = document.createElement("a");
-          anchor.href = buildImageDownloadUrl(index);
-          anchor.download = data.downloadFilenames[index] || "xhs-" + (index + 1) + ".jpg";
-          anchor.rel = "noopener";
-          document.body.appendChild(anchor);
-          anchor.click();
-          anchor.remove();
-        }, index * 220);
+        const batchIndex = Math.floor(index / batchSize);
+        const runDownload = () => triggerImageDownload(
+          buildImageDownloadUrl(index),
+          data.downloadFilenames[index] || "xhs-" + (index + 1) + ".jpg"
+        );
+        if (batchIndex === 0) {
+          runDownload();
+          return;
+        }
+        window.setTimeout(runDownload, batchIndex * 700);
       });
+    }
+
+    function triggerImageDownload(url, filename) {
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
     }
 
     function shouldFallbackToDownload(error) {

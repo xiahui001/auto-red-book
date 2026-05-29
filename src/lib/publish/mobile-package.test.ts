@@ -118,6 +118,9 @@ describe("mobile publish package", () => {
     expect(html).toContain("downloadFilenames");
     expect(html).toContain("return data.imageUrls[imageIndex]");
     expect(html).not.toContain("/api/mobile-publish-packages/");
+    expect(html).toContain("const batchSize = 2");
+    expect(html).toContain("triggerImageDownload");
+    expect(html).not.toContain("index * 220");
     expect(html).toContain("const files = shareFiles;");
     expect(html).toContain("await navigator.share({ files });");
     expect(html).not.toContain("title: data.title");

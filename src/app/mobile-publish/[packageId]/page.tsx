@@ -234,17 +234,26 @@ function isIosUserAgent() {
 }
 
 function startBrowserImageDownloads(packageData: MobilePackageData) {
+  const batchSize = 2;
   packageData.imageUrls.forEach((_, index) => {
-    window.setTimeout(() => {
-      const anchor = document.createElement("a");
-      anchor.href = buildImageDownloadUrl(packageData.packageId, index);
-      anchor.download = `xhs-${index + 1}.jpg`;
-      anchor.rel = "noopener";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-    }, index * 220);
+    const batchIndex = Math.floor(index / batchSize);
+    const runDownload = () => triggerImageDownload(buildImageDownloadUrl(packageData.packageId, index), `xhs-${index + 1}.jpg`);
+    if (batchIndex === 0) {
+      runDownload();
+      return;
+    }
+    window.setTimeout(runDownload, batchIndex * 700);
   });
+}
+
+function triggerImageDownload(url: string, filename: string) {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 function buildImageDownloadUrl(packageId: string, imageIndex: number) {
