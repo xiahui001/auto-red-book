@@ -17,6 +17,7 @@ type MobilePackageData = {
 
 export default function MobilePublishPage() {
   const [packageData, setPackageData] = useState<MobilePackageData | null>(null);
+  const [shareFiles, setShareFiles] = useState<File[] | null>(null);
   const [status, setStatus] = useState("正在加载发布包");
   const [busyAction, setBusyAction] = useState<MobilePublishActionStep["key"] | null>(null);
 
@@ -38,6 +39,35 @@ export default function MobilePublishPage() {
     [packageData?.imageUrls.length]
   );
 
+  useEffect(() => {
+    if (!packageData) return;
+
+    let cancelled = false;
+    setShareFiles(null);
+
+    if (!packageData.imageUrls.length) {
+      setShareFiles([]);
+      return;
+    }
+
+    setStatus(`正在准备 ${packageData.imageUrls.length} 张图片分享文件`);
+
+    void buildShareFiles(packageData.imageUrls)
+      .then((files) => {
+        if (cancelled) return;
+        setShareFiles(files);
+        setStatus(files.length ? "发布包已就绪，请按顺序完成 3 步" : "图片文件未能加载，无法保存到本机");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setStatus(error instanceof Error ? error.message : "图片文件准备失败，请重新生成发布码");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [packageData]);
+
   async function loadPackage(nextDataUrl: string) {
     try {
       const response = await fetch(nextDataUrl, { cache: "no-store" });
@@ -53,18 +83,21 @@ export default function MobilePublishPage() {
   async function saveImagesToPhone() {
     if (!packageData) return;
     setBusyAction("save-images");
-    setStatus(`正在准备 ${packageData.imageUrls.length} 张图片`);
+    setStatus("正在打开系统分享菜单");
 
     try {
-      const files = await buildShareFiles(packageData.imageUrls);
+      const files = shareFiles;
+      if (!files) {
+        throw new Error("图片仍在准备，请稍后再点 Step 1");
+      }
       if (!navigator.share) {
-        throw new Error("当前浏览器不支持系统分享，请用手机系统浏览器重新扫码");
+        throw new Error(buildCameraScanPrompt());
       }
       if (!files.length) {
         throw new Error("图片文件未能加载，无法保存到本机");
       }
       if (navigator.canShare && !navigator.canShare({ files })) {
-        throw new Error("当前浏览器不支持多图保存，请换用手机系统浏览器扫码");
+        throw new Error("当前浏览器不支持多图系统分享，请用手机相机重新扫码");
       }
 
       await navigator.share({
@@ -73,7 +106,7 @@ export default function MobilePublishPage() {
       });
       setStatus("系统菜单已打开，请选择保存图片或存储到照片");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "保存图片失败");
+      setStatus(buildShareErrorMessage(error));
     } finally {
       setBusyAction(null);
     }
@@ -123,7 +156,7 @@ export default function MobilePublishPage() {
             {steps.map((step) => (
               <button
                 className="mobile-step-button"
-                disabled={busyAction !== null}
+                disabled={busyAction !== null || (step.key === "save-images" && shareFiles === null)}
                 key={step.key}
                 onClick={() => runStep(step.key)}
                 type="button"
@@ -167,6 +200,25 @@ function resolvePackageDataUrl(currentUrl: URL) {
 
   const packageId = currentUrl.pathname.split("/").filter(Boolean).at(-1)?.trim() ?? "";
   return packageId ? `/api/mobile-publish-packages/${packageId}` : "";
+}
+
+function buildCameraScanPrompt() {
+  return "当前浏览器不支持系统分享，请用手机相机重新扫码";
+}
+
+function buildShareErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
+
+  if (name === "AbortError") {
+    return "已取消系统分享";
+  }
+
+  if (name === "NotAllowedError" || /permission denied/i.test(message)) {
+    return "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1";
+  }
+
+  return message || "保存图片失败";
 }
 
 async function buildShareFiles(imageUrls: string[]) {

@@ -94,6 +94,29 @@ describe("mobile publish package", () => {
     expect(html).toContain("Step 3");
     expect(html).not.toContain("one-click import");
   });
+
+  it("prepares share files before Step 1 in the generated phone package HTML", () => {
+    const pkg = buildMobilePublishPackage(
+      {
+        id: "draft-4",
+        title: "Gallery post",
+        body: "Share prepared image files from a direct tap.",
+        generatedImages: makePublishImages(12)
+      },
+      "pkg-4"
+    );
+
+    const html = buildMobilePublishHtml(pkg);
+    const saveClickHandler = html.slice(
+      html.indexOf('saveImagesButton.addEventListener("click"'),
+      html.indexOf('copyTextButton.addEventListener("click"')
+    );
+
+    expect(html).toContain("void prepareShareFiles();");
+    expect(html).toContain("const files = shareFiles;");
+    expect(saveClickHandler).not.toContain("buildShareFiles(data.imageUrls)");
+    expect(html).toContain("请用手机相机重新扫码");
+  });
 });
 
 function makePublishImages(count: number, start = 0) {

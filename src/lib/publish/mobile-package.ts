@@ -267,6 +267,8 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
     const saveImagesButton = document.getElementById("save-images-btn");
     const copyTextButton = document.getElementById("copy-text-btn");
     const openXhsButton = document.getElementById("open-xhs-btn");
+    let shareFiles = null;
+    let shareFilesError = "";
 
     shareSource.textContent = data.shareText;
     imagesRoot.innerHTML = data.imageUrls.length
@@ -289,23 +291,68 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
       return files;
     }
 
+    function cameraScanPrompt() {
+      return "当前浏览器不支持系统分享，请用手机相机重新扫码";
+    }
+
+    function shareErrorMessage(error) {
+      const message = error instanceof Error ? error.message : String(error || "");
+      const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
+      if (name === "AbortError") return "已取消系统分享。";
+      if (name === "NotAllowedError" || /permission denied/i.test(message)) {
+        return "系统分享权限被浏览器拒绝，请用手机相机重新扫码后再点 Step 1。";
+      }
+      return message || "保存图片失败";
+    }
+
+    async function prepareShareFiles() {
+      shareFiles = null;
+      shareFilesError = "";
+
+      if (!data.imageUrls.length) {
+        shareFiles = [];
+        return;
+      }
+
+      saveImagesButton.disabled = true;
+      status.textContent = "正在准备 " + data.imageUrls.length + " 张图片分享文件";
+
+      try {
+        const files = await buildShareFiles(data.imageUrls);
+        shareFiles = files;
+        status.textContent = files.length
+          ? "发布包已就绪，请按顺序完成 3 步。"
+          : "图片文件未能加载，无法保存到手机。";
+      } catch (error) {
+        shareFilesError = error instanceof Error ? error.message : "图片文件准备失败，请重新生成发布码";
+        status.textContent = shareFilesError;
+      } finally {
+        saveImagesButton.disabled = false;
+      }
+    }
+
+    void prepareShareFiles();
+
     saveImagesButton.addEventListener("click", async () => {
       saveImagesButton.disabled = true;
-      status.textContent = "正在准备 " + data.imageUrls.length + " 张图片";
+      status.textContent = "正在打开系统分享菜单";
       try {
         if (!data.imageUrls.length) {
           status.textContent = "当前没有配图，请跳过 Step 1，直接复制文案并打开小红书。";
           return;
         }
-        const files = await buildShareFiles(data.imageUrls);
-        if (!navigator.share) {
-          throw new Error("当前浏览器不支持系统分享，请用手机系统浏览器重新扫码");
+        if (shareFiles === null) {
+          throw new Error(shareFilesError || "图片仍在准备，请稍后再点 Step 1");
         }
+        if (!navigator.share) {
+          throw new Error(cameraScanPrompt());
+        }
+        const files = shareFiles;
         if (!files.length) {
           throw new Error("图片文件未能加载，无法保存到手机");
         }
         if (navigator.canShare && !navigator.canShare({ files })) {
-          throw new Error("当前浏览器不支持多图保存，请换用手机系统浏览器扫码");
+          throw new Error("当前浏览器不支持多图系统分享，请用手机相机重新扫码");
         }
         await navigator.share({
           title: data.title,
@@ -313,7 +360,7 @@ export function buildMobilePublishHtml(pkg: MobilePublishPackage) {
         });
         status.textContent = "系统菜单已打开，请选择保存图片或存储到照片。";
       } catch (error) {
-        status.textContent = error instanceof Error ? error.message : "保存图片失败";
+        status.textContent = shareErrorMessage(error);
       } finally {
         saveImagesButton.disabled = false;
       }
