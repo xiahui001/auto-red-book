@@ -22,7 +22,9 @@ const BUCKET = MOBILE_PUBLISH_BUCKET;
 const EVENTWANG_ROOT = path.join(process.cwd(), "data", "eventwang-gallery");
 const LOCAL_PACKAGE_ROOT = LOCAL_MOBILE_PACKAGE_ROOT;
 const IMAGE_UPLOAD_CONCURRENCY = 4;
-const MOBILE_PACKAGE_FILE_SIZE_LIMIT_BYTES = 20_000_000;
+const MOBILE_PACKAGE_FILE_SIZE_LIMIT_BYTES = 50_000_000;
+const MOBILE_PACKAGE_IMAGE_MAX_DIMENSION = 1600;
+const MOBILE_PACKAGE_IMAGE_JPEG_QUALITY = 82;
 const STORAGE_UPLOAD_RETRY_DELAYS_MS = [150, 500];
 
 const imageSchema = z.object({
@@ -410,9 +412,13 @@ async function uploadPackageImage(
   const resolvedPath = resolved?.resolvedPath;
   if (!resolvedPath) return null;
 
-  const file = await readFile(resolvedPath);
-  const filename = safeFilename(image.filename || path.basename(resolvedPath));
-  const contentType = contentTypeForPath(resolvedPath);
+  const sourceFile = await readFile(resolvedPath);
+  const sourceFilename = safeFilename(image.filename || path.basename(resolvedPath));
+  const sourceContentType = contentTypeForPath(resolvedPath);
+  const optimizedImage = await optimizePackageImage(sourceFile, sourceFilename, sourceContentType);
+  const file = optimizedImage.data;
+  const filename = optimizedImage.filename;
+  const contentType = optimizedImage.contentType;
   const storagePath = `packages/${packageId}/images/${filename}`;
   const uploadedFile = await uploadStorageObjectWithRetry(() =>
     supabase.storage.from(BUCKET).upload(storagePath, file, {
@@ -470,6 +476,44 @@ function estimateStoreZipSize(entries: StoreZipEntry[]) {
     const filenameLength = new TextEncoder().encode(entry.filename).length;
     return total + entry.data.byteLength + 30 + filenameLength + 46 + filenameLength;
   }, 22);
+}
+
+async function optimizePackageImage(data: Buffer, filename: string, contentType: string) {
+  const original = {
+    data,
+    filename,
+    contentType
+  };
+  if (contentType === "image/gif") return original;
+
+  try {
+    const sharp = (await import("sharp")).default;
+    const image = sharp(data, { failOn: "none" });
+    const metadata = await image.metadata();
+    if (!metadata.width && !metadata.height) return original;
+
+    const optimized = await image
+      .rotate()
+      .resize({
+        width: MOBILE_PACKAGE_IMAGE_MAX_DIMENSION,
+        height: MOBILE_PACKAGE_IMAGE_MAX_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true
+      })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: MOBILE_PACKAGE_IMAGE_JPEG_QUALITY, mozjpeg: true })
+      .toBuffer();
+
+    if (!optimized.length || optimized.length >= data.length) return original;
+
+    return {
+      data: optimized,
+      filename: withImageExtension(filename, "jpg"),
+      contentType: "image/jpeg"
+    };
+  } catch {
+    return original;
+  }
 }
 
 function stripZipImageData(image: UploadedPackageImage): UploadableImage {
@@ -618,6 +662,11 @@ function safeLocalPackageId(value: string) {
 
 function safeFilename(value: string) {
   return value.replace(/[^a-z0-9._-]/gi, "-").slice(0, 80) || "image.jpg";
+}
+
+function withImageExtension(filename: string, extension: string) {
+  const parsed = path.parse(filename);
+  return `${parsed.name || "image"}.${extension}`;
 }
 
 function errorMessage(error: unknown) {

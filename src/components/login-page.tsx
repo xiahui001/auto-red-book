@@ -47,7 +47,7 @@ export function LoginPage() {
 
     setBusyAction(mode);
     try {
-      const response = await postJson<AuthSessionSnapshot>("/api/auth/email", {
+      const response = await postJson<AuthSessionSnapshot>("/api/account-auth/email", {
         mode,
         email,
         password
@@ -159,8 +159,30 @@ async function postJson<T>(url: string, body: unknown): Promise<ApiEnvelope<T>> 
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
 
-  return (await response.json()) as ApiEnvelope<T>;
+  if (!contentType.includes("application/json")) {
+    return {
+      ok: false,
+      error: {
+        code: "NON_JSON_RESPONSE",
+        message: `登录接口返回异常：HTTP ${response.status}`
+      }
+    };
+  }
+
+  try {
+    return JSON.parse(text) as ApiEnvelope<T>;
+  } catch {
+    return {
+      ok: false,
+      error: {
+        code: "INVALID_JSON_RESPONSE",
+        message: "登录接口返回数据格式异常"
+      }
+    };
+  }
 }
 
 function isValidEmail(value: string) {

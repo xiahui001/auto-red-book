@@ -62,7 +62,7 @@ export async function readFreshStoredAuthSession(): Promise<AuthSessionSnapshot 
   }
 
   try {
-    const response = await fetch("/api/auth/refresh", {
+    const response = await fetch("/api/account-auth/refresh", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ refreshToken })

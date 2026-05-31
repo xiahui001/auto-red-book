@@ -1,8 +1,10 @@
 .auth/
 .codex/
+.codex-artifacts/
 .logs/
 .tools/
 .next/
+.next-dev-*.log
 Lotus/
 Lotus-git/
 Lotus-latest/

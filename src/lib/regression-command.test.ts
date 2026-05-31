@@ -27,15 +27,27 @@ describe("regression command", () => {
       "src/components/matrix-dashboard.draft-list.test.ts",
       "src/components/matrix-dashboard.mobile-package.test.ts",
       "src/components/matrix-dashboard.hosted-login.test.ts",
+      "src/components/login-page.test.ts",
       "src/lib/publish/mobile-package.test.ts",
       "src/lib/publish/public-origin.test.ts",
       "src/lib/scraping/recovery-action.test.ts",
       "src/lib/scraping/handshake.test.ts",
       "src/lib/regression-command.test.ts",
+      "src/app/api/mobile-publish-packages/route.test.ts",
+      "src/app/api/mobile-publish-packages/[packageId]/route.test.ts",
+      "src/app/api/mobile-publish-packages/[packageId]/images/[imageIndex]/route.test.ts",
+      "src/app/api/mobile-publish-packages/[packageId]/images.zip/route.test.ts",
       "src/app/mobile-publish/[packageId]/page.test.ts"
     ].forEach((testFile) => {
       expect(baselineCommand).toContain(testFile);
     });
+  });
+
+  it("documents the baseline gate for future changes", async () => {
+    const rules = await readFile(path.join(process.cwd(), "AGENTS.md"), "utf8");
+
+    expect(rules).toContain("npm run test:baseline");
+    expect(rules).toContain("before and after changes");
   });
 
   it("exposes an all-backend baseline gate for API and lib changes", async () => {

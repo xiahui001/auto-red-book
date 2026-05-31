@@ -2,15 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const { createSupabaseServerClient, listBuckets, updateBucket, uploadFile } = vi.hoisted(() => ({
+const { createSupabaseServerClient, listBuckets, sharpFactory, updateBucket, uploadFile } = vi.hoisted(() => ({
   createSupabaseServerClient: vi.fn(),
   listBuckets: vi.fn(),
+  sharpFactory: vi.fn(),
   updateBucket: vi.fn(),
   uploadFile: vi.fn()
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient
+}));
+
+vi.mock("sharp", () => ({
+  default: sharpFactory
 }));
 
 import { POST } from "./route";
@@ -25,6 +30,7 @@ describe("/api/mobile-publish-packages", () => {
   beforeEach(() => {
     createSupabaseServerClient.mockReset();
     listBuckets.mockReset();
+    sharpFactory.mockReset();
     updateBucket.mockReset();
     uploadFile.mockReset();
 
@@ -33,6 +39,9 @@ describe("/api/mobile-publish-packages", () => {
       error: null
     });
     updateBucket.mockResolvedValue({ error: null });
+    sharpFactory.mockImplementation(() => {
+      throw new Error("sharp disabled in route tests unless explicitly mocked");
+    });
     createSupabaseServerClient.mockReturnValue({
       storage: {
         listBuckets,
@@ -203,13 +212,50 @@ describe("/api/mobile-publish-packages", () => {
       "xhs-mobile-publish-packages",
       expect.objectContaining({
         allowedMimeTypes: expect.arrayContaining(["application/zip"]),
-        fileSizeLimit: 20_000_000
+        fileSizeLimit: 50_000_000
       })
     );
   });
 
+  it("optimizes local publish images before Supabase upload and zip creation", async () => {
+    await writeTestImages(1);
+    const optimizedImage = Buffer.from("tiny");
+    const sharpPipeline = createSharpPipeline(optimizedImage);
+    sharpFactory.mockReturnValue(sharpPipeline);
+    uploadFile.mockResolvedValue({ error: null });
+
+    const response = await POST(
+      jsonRequest({
+        draft: {
+          id: "draft-optimized-image",
+          title: "Optimized image package",
+          body: "Prepare smaller phone downloads.",
+          generatedImages: makeDraftImages(1)
+        }
+      })
+    );
+    const payload = await response.json();
+    const imageUpload = uploadFile.mock.calls.find(([storagePath]) => String(storagePath).includes("/images/"));
+    const zipUpload = uploadFile.mock.calls.find(([storagePath]) => String(storagePath).endsWith("/images.zip"));
+
+    expect(response.status, JSON.stringify(payload)).toBe(200);
+    expect(imageUpload?.[1]).toEqual(optimizedImage);
+    expect(imageUpload?.[2]).toEqual(expect.objectContaining({ contentType: "image/jpeg" }));
+    expect(zipUpload).toBeDefined();
+    expect(readLocalZipEntryNames(Buffer.from(zipUpload?.[1] as Buffer))).toEqual(["01.jpg"]);
+    expect(sharpPipeline.resize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fit: "inside",
+        height: 1600,
+        width: 1600,
+        withoutEnlargement: true
+      })
+    );
+    expect(sharpPipeline.jpeg).toHaveBeenCalledWith(expect.objectContaining({ quality: 82 }));
+  });
+
   it("skips prebuilt zip upload when the archive would exceed the storage limit", async () => {
-    await writeSizedTestImages([11_000_000, 10_000_000]);
+    await writeSizedTestImages([50_000_001]);
     uploadFile.mockResolvedValue({ error: null });
 
     const response = await POST(
@@ -218,7 +264,7 @@ describe("/api/mobile-publish-packages", () => {
           id: "draft-large-zip-skip",
           title: "Large zip package",
           body: "Do not block code generation on an oversized archive.",
-          generatedImages: makeDraftImages(2)
+          generatedImages: makeDraftImages(1)
         }
       })
     );
@@ -592,6 +638,18 @@ function createDeferred() {
   });
 
   return { promise, resolve };
+}
+
+function createSharpPipeline(output: Buffer) {
+  const pipeline = {
+    flatten: vi.fn(() => pipeline),
+    jpeg: vi.fn(() => pipeline),
+    metadata: vi.fn().mockResolvedValue({ height: 2000, width: 3000 }),
+    resize: vi.fn(() => pipeline),
+    rotate: vi.fn(() => pipeline),
+    toBuffer: vi.fn().mockResolvedValue(output)
+  };
+  return pipeline;
 }
 
 function readLocalZipEntryNames(buffer: Buffer) {

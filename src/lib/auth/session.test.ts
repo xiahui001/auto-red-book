@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { authSessionNeedsRefresh, type AuthSessionSnapshot } from "./session";
 
@@ -17,6 +19,13 @@ describe("auth session refresh policy", () => {
   it("refreshes when token metadata is missing", () => {
     expect(authSessionNeedsRefresh(makeSnapshot({ expiresAt: undefined }), 800)).toBe(true);
     expect(authSessionNeedsRefresh({ user: { id: "user-1" }, session: null }, 800)).toBe(true);
+  });
+
+  it("uses the account-auth refresh endpoint", async () => {
+    const source = await readFile(path.join(process.cwd(), "src/lib/auth/session.ts"), "utf8");
+
+    expect(source).toContain('"/api/account-auth/refresh"');
+    expect(source).not.toContain('"/api/auth/refresh"');
   });
 });
 
