@@ -1048,11 +1048,6 @@ export function MatrixDashboard() {
       return;
     }
 
-    const latestStatus = await refreshXhsCdpStatus(true);
-    if (latestStatus?.available && latestStatus.loggedIn) {
-      return;
-    }
-
     void startXhsCdpBrowser();
   }
 
@@ -1093,11 +1088,6 @@ export function MatrixDashboard() {
   }
 
   function handleEventwangLoginCardClick() {
-    if (eventwangLoggedIn) {
-      void refreshScrapingHandshake(true);
-      return;
-    }
-
     if (localBrowserMode) {
       void startEventwangManualLogin();
     } else {
@@ -2435,7 +2425,7 @@ export function MatrixDashboard() {
                         type="button"
                       >
                         <span>活动汪{eventwangStatusHeadline(eventwangConnector)}</span>
-                        <small>{eventwangLoggedIn ? "点击刷新真实状态" : "点击打开登录"}</small>
+                        <small>{eventwangLoggedIn ? "点击打开重新登录" : "点击打开登录"}</small>
                       </button>
                       <label className={`source-mode-toggle ${eventwangLiveEnabled ? "active" : ""} ${taskBusy ? "disabled" : ""}`}>
                         <input
@@ -2981,7 +2971,7 @@ function xhsCollectorStatusDetail(
 ) {
   if (busyAction === "xhs-cdp-status" || busyAction === "xhs-cdp-start") return "正在检查采集浏览器";
   if (!localBrowserMode) return "点击打开小红书登录页";
-  if (cdpStatus?.available) return `采集浏览器已连接 · 小红书页面 ${cdpStatus.xhsPageCount} 个`;
+  if (cdpStatus?.available) return `采集浏览器已连接 · 点击打开登录页`;
   if (loginStatus?.loggedIn) return "已有备用登录 · 点击打开采集浏览器";
   if (loginStatus?.savedLogin) return "备用登录需刷新 · 点击打开采集浏览器";
   return "点击打开采集浏览器";
