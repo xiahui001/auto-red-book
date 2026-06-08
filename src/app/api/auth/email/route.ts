@@ -136,6 +136,12 @@ function normalizeSupabaseAuthMessage(
   if (lower.includes("rate limit")) {
     return hasServiceRoleKey ? "email rate limit exceeded" : "email rate limit exceeded; missing SUPABASE_SERVICE_ROLE_KEY fallback";
   }
+  if (lower.includes("exceed_storage_size_quota")) {
+    return "Supabase 项目已恢复但仍被存储配额限制，Auth 暂不可用；请升级套餐、移除 spend cap 或清理 Supabase Storage 后重试";
+  }
+  if (lower.includes("service for this project is restricted")) {
+    return `Supabase 项目服务被限制，Auth 暂不可用：${message}`;
+  }
   if (lower.includes("invalid login credentials")) return "邮箱或密码错误";
   if (lower.includes("user already registered")) return "该邮箱已注册，请直接登录";
   if (lower.includes("email not confirmed")) return "邮箱尚未完成验证";

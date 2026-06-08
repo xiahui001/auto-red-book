@@ -2,6 +2,7 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import { getEventwangLoginStatus } from "@/lib/eventwang/session";
 import { isHostedRuntime } from "@/lib/runtime/deployment";
+import { getSupabaseAuthHealth } from "@/lib/supabase/health";
 import { getXhsLoginStatus } from "@/lib/xhs/session";
 
 export type ScrapingCheck = {
@@ -37,9 +38,10 @@ export async function getScrapingHandshake(options?: { fresh?: boolean }): Promi
   const authStatePath = path.join(WORKSPACE_ROOT, ".auth", "eventwang.json");
   const galleryScriptPath = path.join(WORKSPACE_ROOT, "scripts", "collect-eventwang-free-keyword.mjs");
   const outputRoot = path.join(WORKSPACE_ROOT, "data", "eventwang-gallery");
-  const [eventwangStatus, xhsStatus] = await Promise.all([
+  const [eventwangStatus, xhsStatus, supabaseAuthHealth] = await Promise.all([
     getEventwangLoginStatus({ fresh: options?.fresh }),
-    getXhsLoginStatus({ fresh: options?.fresh })
+    getXhsLoginStatus({ fresh: options?.fresh }),
+    getSupabaseAuthHealth()
   ]);
 
   const eventwangChecks: ScrapingCheck[] = [
@@ -64,7 +66,12 @@ export async function getScrapingHandshake(options?: { fresh?: boolean }): Promi
 
   const supabaseChecks: ScrapingCheck[] = [
     envCheck("NEXT_PUBLIC_SUPABASE_URL", "前端 Supabase URL"),
-    envCheck("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "前端 Supabase 公钥")
+    envCheck("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "前端 Supabase 公钥"),
+    {
+      label: "Supabase Auth 在线状态",
+      ok: supabaseAuthHealth.ok,
+      detail: supabaseAuthHealth.detail
+    }
   ];
 
   const xhsChecks: ScrapingCheck[] = [
@@ -99,7 +106,7 @@ export async function getScrapingHandshake(options?: { fresh?: boolean }): Promi
     connectors: [
       hostedRuntime ? hostedLocalBrowserConnector(eventwangConnector, "活动汪登录和图库采集需在 localhost 本机版执行") : eventwangConnector,
       hostedRuntime ? hostedLocalBrowserConnector(xhsConnector, "小红书登录态检测和热点参考需在 localhost 本机版执行") : xhsConnector,
-      connector("supabase", "Supabase 持久化", supabaseChecks, "环境变量齐全后可按用户持久化")
+      connector("supabase", "Supabase 持久化", supabaseChecks, "Auth 在线且可按用户持久化")
     ],
     safeguards: [
       hostedRuntime
